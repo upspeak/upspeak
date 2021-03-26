@@ -1,0 +1,12 @@
+[package]
+authors = ["Kaustav Das Modak <kaustav.dasmodak@gmail.com>"]
+edition = "2018"
+name = "upspeak"
+version = "0.0.1"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = {version = "1.0"}
+sqlx = {version = "0.5", features = ["runtime-tokio-native-tls", "postgres", "json"]}
+tokio = {version = "1", features = ["rt", "macros"]}
