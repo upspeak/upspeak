@@ -19,7 +19,7 @@ pub enum User {
 impl fmt::Display for User {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      User::Anonymous => write!(f, "@{}:local", "anonymous"),
+      User::Anonymous => write!(f, "@anonymous:local"),
       User::Local(ref username) => write!(f, "@{}:local", username),
       User::Remote(ref username, ref hostname) => write!(f, "@{}:{}", username, hostname),
     }
@@ -64,7 +64,7 @@ pub struct Node {
 
 impl Node {
   pub fn is_leaf(&self) -> bool {
-    self.relations.children.len() < 1
+    self.relations.children.is_empty()
   }
 }
 
