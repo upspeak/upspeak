@@ -1,22 +1,21 @@
-use std::io;
-use std::fmt;
 use std::error;
+use std::fmt;
+use std::io;
 use std::result;
 
-pub mod core;
-pub mod store;
+pub mod primitives;
 
 #[derive(Debug)]
 pub enum Error {
   NotFound,
-  Io(io::Error)
+  Io(io::Error),
 }
 
 impl fmt::Display for Error {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match *self {
       Error::Io(ref err) => err.fmt(f),
-      Error::NotFound => write!(f, "Resource not found")
+      Error::NotFound => write!(f, "Resource not found"),
     }
   }
 }
@@ -30,7 +29,3 @@ impl From<io::Error> for Error {
 }
 
 pub type Result<T> = result::Result<T, Error>;
-
-
-
-
