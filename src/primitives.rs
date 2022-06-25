@@ -1,15 +1,42 @@
 use crate::Result;
 
-pub trait Actionable {
+pub trait Node {
+  type NodeType;
+
+  fn content(&self) -> Self::NodeType;
+  fn children<T: Node>(&self) -> Vec<T>;
+}
+
+pub trait Source {
+  type Config;
+
+  fn receive<T: Node>(&self, config: Self::Config) -> Result<Vec<T>>;
+}
+
+pub trait Destination {
+  type Config;
+
+  fn send<T: Node>(&self, config: Self::Config, nodes: Vec<T>) -> Result<()>;
+}
+
+pub trait Filter {
+  type Config;
+
+  fn filter<T: Node>(&self, config: Self::Config, nodes: Vec<T>) -> Result<Vec<T>>;
+}
+
+pub trait Action {
   type Input;
   type Output;
 
   fn run(self, input: Self::Input) -> Result<Self::Output>;
 }
 
-pub trait Renderer<O> {
-  fn render(&self) -> Result<O>;
+pub trait Render<T> {
+  fn render(&self) -> Result<T>;
 }
+
+pub struct Repository {}
 
 #[cfg(test)]
 mod tests {
@@ -19,7 +46,7 @@ mod tests {
   fn test_actionable() {
     struct Multiplier(i64);
 
-    impl Actionable for Multiplier {
+    impl Action for Multiplier {
       type Input = i64;
       type Output = i64;
 
@@ -41,7 +68,7 @@ mod tests {
       body: String,
     }
 
-    impl Renderer<String> for HTMLNode {
+    impl Render<String> for HTMLNode {
       fn render(&self) -> Result<String> {
         Ok(format!(
           "<html><head><title>{}</title></head><body>{}</body></html>",
@@ -50,7 +77,7 @@ mod tests {
       }
     }
 
-    impl Renderer<i64> for HTMLNode {
+    impl Render<i64> for HTMLNode {
       fn render(&self) -> Result<i64> {
         Ok(42)
       }
