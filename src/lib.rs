@@ -3,7 +3,7 @@ use std::fmt;
 use std::io;
 use std::result;
 
-pub mod primitives;
+pub mod flow;
 
 #[derive(Debug)]
 pub enum Error {
