@@ -1,8 +1,8 @@
 use super::process::Process;
 
 pub trait Component {
-  fn setup(&self, proc: Process);
-  fn execute(&self, proc: Process);
+  fn setup(self, proc: Process) -> Self;
+  fn execute(self, proc: Process);
 }
 
 pub trait ComponentMustRun: Component {
