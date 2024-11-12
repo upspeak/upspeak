@@ -14,7 +14,7 @@ import (
 func TestEdgeMarshalJSON(t *testing.T) {
 	source := xid.New()
 	target := xid.New()
-	edge := NewEdge("friend", source, target, "knows", 0.75)
+	edge := newEdge("friend", source, target, "knows", 0.75)
 	edge.CreatedAt = time.Now()
 
 	data, err := json.Marshal(edge)

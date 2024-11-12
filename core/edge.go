@@ -88,7 +88,7 @@ func (e *Edge) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// NewEdge creates a new Edge with the given parameters.
+// newEdge creates a new Edge with the given parameters.
 //
 // Parameters:
 //   - edgeType: A string representing the type of the edge.
@@ -98,7 +98,7 @@ func (e *Edge) UnmarshalJSON(data []byte) error {
 //   - weight: A float64 representing the weight of the edge.
 //
 // Returns an Edge struct initialized with the provided parameters and a new ID and CreatedAt timestamp.
-func NewEdge(edgeType string, source, target xid.ID, label string, weight float64) Edge {
+func newEdge(edgeType string, source, target xid.ID, label string, weight float64) Edge {
 	return Edge{
 		ID:        xid.New(),
 		Type:      edgeType,
