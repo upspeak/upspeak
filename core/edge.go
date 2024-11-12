@@ -11,6 +11,7 @@ import (
 // An Edge has an ID, defined using xid.ID such that it is unique and sortable.
 // Both Source and Target Nodes are identified by their ID.
 // Each Edge has a Type that determines the relationship between the Source and Target Nodes.
+// The Weight field is a float64 that can be used to represent the strength of the relationship.
 // An Edge is unidirectional, meaning that the Source Node is the origin of the Edge and the Target Node is the destination.
 // The Label field is a string that describes the relationship between the Source and Target Nodes.
 type Edge struct {
@@ -19,6 +20,7 @@ type Edge struct {
 	Source    xid.ID    `json:"source"`
 	Target    xid.ID    `json:"target"`
 	Label     string    `json:"label"`
+	Weight    float64   `json:"weight"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -26,19 +28,21 @@ type Edge struct {
 // The ID, Source, and Target fields are converted to strings to ensure they are properly represented in JSON format.
 func (e Edge) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		ID        string    `json:"id"`
-		Type      string    `json:"type"`
-		Source    string    `json:"source"`
-		Target    string    `json:"target"`
-		Label     string    `json:"label"`
-		CreatedAt time.Time `json:"created_at"`
+		ID        string  `json:"id"`
+		Type      string  `json:"type"`
+		Source    string  `json:"source"`
+		Target    string  `json:"target"`
+		Label     string  `json:"label"`
+		Weight    float64 `json:"weight"`
+		CreatedAt string  `json:"created_at"`
 	}{
 		ID:        e.ID.String(), // Convert ID to string for JSON representation
 		Type:      e.Type,
 		Source:    e.Source.String(), // Convert Source to string for JSON representation
 		Target:    e.Target.String(), // Convert Target to string for JSON representation
 		Label:     e.Label,
-		CreatedAt: e.CreatedAt,
+		Weight:    e.Weight,
+		CreatedAt: e.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -52,6 +56,7 @@ func (e *Edge) UnmarshalJSON(data []byte) error {
 		Source    string    `json:"source"`
 		Target    string    `json:"target"`
 		Label     string    `json:"label"`
+		Weight    float64   `json:"weight"`
 		CreatedAt time.Time `json:"created_at"`
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
@@ -74,6 +79,33 @@ func (e *Edge) UnmarshalJSON(data []byte) error {
 	e.Source = source
 	e.Target = target
 	e.Label = aux.Label
-	e.CreatedAt = aux.CreatedAt
+	e.Weight = aux.Weight
+	createdAt, err := time.Parse(time.RFC3339, aux.CreatedAt.Format(time.RFC3339))
+	if err != nil {
+		return err
+	}
+	e.CreatedAt = createdAt
 	return nil
+}
+
+// NewEdge creates a new Edge with the given parameters.
+//
+// Parameters:
+//   - edgeType: A string representing the type of the edge.
+//   - source: The source node ID of type xid.ID.
+//   - target: The target node ID of type xid.ID.
+//   - label: A string representing the label of the edge.
+//   - weight: A float64 representing the weight of the edge.
+//
+// Returns an Edge struct initialized with the provided parameters and a new ID and CreatedAt timestamp.
+func NewEdge(edgeType string, source, target xid.ID, label string, weight float64) Edge {
+	return Edge{
+		ID:        xid.New(),
+		Type:      edgeType,
+		Source:    source,
+		Target:    target,
+		Label:     label,
+		Weight:    weight,
+		CreatedAt: time.Now(),
+	}
 }
