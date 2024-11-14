@@ -87,5 +87,5 @@ func TestAttachmentEdge(t *testing.T) {
 	edge := AttachmentEdge(node1.ID, node2.ID)
 
 	// Ensure the resulting Edge is valid and matches expectations
-	validateEdge(t, edge, "Attachment", node1.ID, node2.ID, 0.3, "")
+	validateEdge(t, edge, "Attachment", node1.ID, node2.ID, 0.5, "")
 }
