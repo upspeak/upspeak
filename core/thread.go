@@ -1,6 +1,11 @@
 package core
 
-const KindThread Kind = "thread"
+import "github.com/rs/xid"
+
+const (
+	KindThread  Kind = "Thread"
+	KindComment Kind = "Comment"
+)
 
 // ThreadMetadata represents thread-specific metadata
 type ThreadMetadata struct {
@@ -58,4 +63,12 @@ func (t *Thread) WithContent(content_type string, content map[string]any) *Threa
 	t.Body.ContentType = content_type
 	t.Body.Content = content
 	return t
+}
+
+// NewComment creates a new Node as a comment for a given thread id and creates a child edge
+// between the comment and the thread.
+func NewComment[M, B any](thread_id xid.ID, metadata M, body B) (*Node[M, B], Edge) {
+	comment := NewNode(KindComment, metadata, body)
+	edge := ChildEdge(comment.ID, thread_id)
+	return comment, edge
 }
