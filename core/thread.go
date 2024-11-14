@@ -52,19 +52,6 @@ func NewThread(body ThreadBody, author string) Thread {
 	}
 }
 
-// SetProps adds a property to the thread metadata
-func (t *Thread) SetProps(key, value string) *Thread {
-	t.Metadata.Props[key] = value
-	return t
-}
-
-// WithContent sets the content of the thread body
-func (t *Thread) WithContent(content_type string, content map[string]any) *Thread {
-	t.Body.ContentType = content_type
-	t.Body.Content = content
-	return t
-}
-
 // NewComment creates a new Node as a comment for a given thread id and creates a child edge
 // between the comment and the thread.
 func NewComment[M, B any](thread_id xid.ID, metadata M, body B) (Node[M, B], Edge) {
