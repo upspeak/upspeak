@@ -1,12 +1,13 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
 
 // Common function to test Node JSON marshaling and unmarshaling
-func testNodeJSON[M, B any](t *testing.T, node *Node[M, B], expectedDatatype string, expectedMetadata M, expectedBody B) {
+func testNodeJSON[M, B any](t *testing.T, node *Node[M, B], expectedMetadata M, expectedBody B) {
 	// Marshal the Node to JSON
 	jsonData, err := json.Marshal(node)
 	if err != nil {
@@ -17,10 +18,6 @@ func testNodeJSON[M, B any](t *testing.T, node *Node[M, B], expectedDatatype str
 	var unmarshaledNode map[string]interface{}
 	if err := json.Unmarshal(jsonData, &unmarshaledNode); err != nil {
 		t.Fatalf("Failed to unmarshal JSON: %v", err)
-	}
-
-	if unmarshaledNode["datatype"] != expectedDatatype {
-		t.Errorf("Expected datatype %s, got %s", expectedDatatype, unmarshaledNode["datatype"])
 	}
 
 	// Handle expected metadata comparison
@@ -80,37 +77,37 @@ func compareMaps(a, b map[string]interface{}) bool {
 func TestNodeWithStringMetadataAndBody(t *testing.T) {
 	tests := []struct {
 		name     string
-		datatype string
+		kind     string
 		metadata string
 		body     string
 	}{
 		{
 			name:     "example test",
-			datatype: "example",
+			kind:     "exampleKind",
 			metadata: "example metadata",
 			body:     "example body",
 		},
 		{
 			name:     "empty metadata and body",
-			datatype: "empty",
+			kind:     "emptyKind",
 			metadata: "",
 			body:     "",
 		},
 		{
 			name:     "whitespace metadata and body",
-			datatype: "whitespace",
+			kind:     "whitespaceKind",
 			metadata: "   ",
 			body:     "   ",
 		},
 		{
 			name:     "special characters",
-			datatype: "special",
+			kind:     "specialKind",
 			metadata: "!@#$%^&*()",
 			body:     "<>{}[]",
 		},
 		{
 			name:     "long string",
-			datatype: "long",
+			kind:     "longStringKind",
 			metadata: "a very long string that exceeds normal length",
 			body:     "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
 		},
@@ -118,8 +115,8 @@ func TestNodeWithStringMetadataAndBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode(tt.datatype, tt.metadata, tt.body)
-			testNodeJSON[string, string](t, &node, tt.datatype, tt.metadata, tt.body)
+			node := NewNode(Kind(tt.kind), tt.metadata, tt.body)
+			testNodeJSON[string, string](t, &node, tt.metadata, tt.body)
 		})
 	}
 }
@@ -137,11 +134,13 @@ type TextNodeBody struct {
 func TestNodeWithCustomStructMetadataAndBody(t *testing.T) {
 	tests := []struct {
 		name     string
+		kind     string
 		metadata TextNodeMetadata
 		body     TextNodeBody
 	}{
 		{
 			name:     "example test",
+			kind:     "customKind",
 			metadata: TextNodeMetadata{Version: 1, Author: "John Doe"},
 			body:     TextNodeBody{Text: "example text", WordCount: 2},
 		},
@@ -150,8 +149,57 @@ func TestNodeWithCustomStructMetadataAndBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode("text", tt.metadata, tt.body)
-			testNodeJSON[TextNodeMetadata, TextNodeBody](t, &node, "text", tt.metadata, tt.body)
+			node := NewNode(Kind(tt.kind), tt.metadata, tt.body)
+			testNodeJSON[TextNodeMetadata, TextNodeBody](t, &node, tt.metadata, tt.body)
+		})
+	}
+}
+
+func TestKindJSONMarshaling(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     Kind
+		expected string
+	}{
+		{
+			name:     "simple kind",
+			kind:     "exampleKind",
+			expected: `"exampleKind"`,
+		},
+		// Question: Should an empty Kind be allowed? Allowing for now.
+		{
+			name:     "empty kind",
+			kind:     "",
+			expected: `""`,
+		},
+		{
+			name:     "special characters",
+			kind:     "!@#$%^&*()",
+			expected: `"!@#$%^\u0026*()"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test marshaling
+			var buf bytes.Buffer
+			encoder := json.NewEncoder(&buf)
+			if err := encoder.Encode(tt.kind); err != nil {
+				t.Fatalf("Failed to marshal Kind to JSON: %v", err)
+			}
+			jsonData := buf.Bytes()
+			if string(jsonData) != tt.expected+"\n" {
+				t.Errorf("Expected JSON %v, got %v", tt.expected, string(jsonData))
+			}
+
+			// Test unmarshaling
+			var unmarshaledKind Kind
+			if err := json.Unmarshal(jsonData, &unmarshaledKind); err != nil {
+				t.Fatalf("Failed to unmarshal JSON to Kind: %v", err)
+			}
+			if unmarshaledKind != tt.kind {
+				t.Errorf("Expected Kind %v, got %v", tt.kind, unmarshaledKind)
+			}
 		})
 	}
 }

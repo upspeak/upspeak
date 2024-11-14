@@ -6,6 +6,11 @@ import (
 	"github.com/rs/xid"
 )
 
+const (
+	KindText  = Kind("text")
+	KindImage = Kind("image")
+)
+
 func validateEdge(t *testing.T, edge Edge, expectedType string, expectedSource, expectedTarget xid.ID, expectedWeight float64, expectedLabel string) {
 	if edge.Type != expectedType {
 		t.Errorf("expected edge type to be '%s', got '%s'", expectedType, edge.Type)
@@ -29,8 +34,8 @@ func validateEdge(t *testing.T, edge Edge, expectedType string, expectedSource, 
 
 func TestReplyEdge(t *testing.T) {
 	// Create two Text Nodes
-	node1 := NewNode("text", map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
-	node2 := NewNode("text", map[string]interface{}{"author": "Bob"}, map[string]interface{}{"content": "Hi"})
+	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	node2 := NewNode(KindText, map[string]interface{}{"author": "Bob"}, map[string]interface{}{"content": "Hi"})
 
 	// Create a ReplyEdge marking the second node as a reply to the first
 	edge := ReplyEdge(node1.ID, node2.ID)
@@ -41,7 +46,7 @@ func TestReplyEdge(t *testing.T) {
 
 func TestAnnotationEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode("text", map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
 
 	// Create a URL Node
 	node2 := NewNode("url", map[string]interface{}{"author": "Bob"}, map[string]interface{}{"url": "http://example.com"})
@@ -55,10 +60,10 @@ func TestAnnotationEdge(t *testing.T) {
 
 func TestForkEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode("text", map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
 
 	// Create another Text Node with the same content, but a different ID
-	node2 := NewNode("text", map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	node2 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
 
 	// Create a ForkEdge marking the second node as a fork of the first
 	edge := ForkEdge(node1.ID, node2.ID)
@@ -73,10 +78,10 @@ func TestForkEdge(t *testing.T) {
 
 func TestAttachmentEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode("text", map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
 
 	// Create an Image Node with a URL field in its Body
-	node2 := NewNode("image", map[string]interface{}{"author": "Bob"}, map[string]interface{}{"url": "http://example.com/image.jpg"})
+	node2 := NewNode(KindImage, map[string]interface{}{"author": "Bob"}, map[string]interface{}{"url": "http://example.com/image.jpg"})
 
 	// Create an AttachmentEdge marking the second node as an attachment of the first
 	edge := AttachmentEdge(node1.ID, node2.ID)
