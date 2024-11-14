@@ -40,15 +40,15 @@ type Thread struct {
 }
 
 // NewThread creates a new thread starting from an existing root node
-func NewThread(body ThreadBody, author string) *Thread {
+func NewThread(body ThreadBody, author string) Thread {
 	metadata := ThreadMetadata{
 		Author:  author,
 		Version: 1,
 		Props:   make(map[string]string),
 	}
 
-	return &Thread{
-		Node: *NewNode(KindThread, metadata, body),
+	return Thread{
+		Node: NewNode(KindThread, metadata, body),
 	}
 }
 
@@ -67,7 +67,7 @@ func (t *Thread) WithContent(content_type string, content map[string]any) *Threa
 
 // NewComment creates a new Node as a comment for a given thread id and creates a child edge
 // between the comment and the thread.
-func NewComment[M, B any](thread_id xid.ID, metadata M, body B) (*Node[M, B], Edge) {
+func NewComment[M, B any](thread_id xid.ID, metadata M, body B) (Node[M, B], Edge) {
 	comment := NewNode(KindComment, metadata, body)
 	edge := ChildEdge(comment.ID, thread_id)
 	return comment, edge

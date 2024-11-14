@@ -69,8 +69,8 @@ type Node[M any, B any] struct {
 }
 
 // NewNode creates a new Node with the given Metadata and Body.
-func NewNode[M, B any](kind Kind, metadata M, body B) *Node[M, B] {
-	return &Node[M, B]{
+func NewNode[M, B any](kind Kind, metadata M, body B) Node[M, B] {
+	return Node[M, B]{
 		ID:        xid.New(),
 		Kind:      kind,
 		Metadata:  metadata,
