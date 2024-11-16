@@ -142,14 +142,32 @@ type Graph[M, B any] struct {
 	Edges map[xid.ID]Edge       `json:"edges"` // Map of edge IDs to edges
 }
 
-// EventLog holds a log of events.
+// EventLog holds an append-only log of events.
 type EventLog[M, B any] struct {
 	Events []Event[M, B] `json:"events"` // List of events
 }
 
-// AddEvent adds an event to the event log.
+// AddEvent appends an event to the event log.
 func (log *EventLog[M, B]) AddEvent(event Event[M, B]) {
 	log.Events = append(log.Events, event)
+}
+
+// FromJSON creates an EventLog by parsing a JSON array of events.
+func (log *EventLog[M, B]) FromJSON(data []byte) error {
+	var rawEvents []json.RawMessage
+	if err := json.Unmarshal(data, &rawEvents); err != nil {
+		return err
+	}
+
+	for _, rawEvent := range rawEvents {
+		var event Event[M, B]
+		if err := json.Unmarshal(rawEvent, &event); err != nil {
+			return err
+		}
+		log.Events = append(log.Events, event)
+	}
+
+	return nil
 }
 
 // Replay replays the event log and produces a Graph.
@@ -184,4 +202,72 @@ func (log *EventLog[M, B]) Replay() Graph[M, B] {
 	}
 
 	return graph
+}
+
+// NewNodeCreatedEvent creates a new NodeCreated event.
+func NewNodeCreatedEvent[M, B any](node Node[M, B]) Event[M, B] {
+	return Event[M, B]{
+		ID:   xid.New(),
+		Type: NodeCreated,
+		Payload: NodeCreatedPayload[M, B]{
+			Node: node,
+		},
+	}
+}
+
+// NewNodeUpdatedEvent creates a new NodeUpdated event.
+func NewNodeUpdatedEvent[M, B any](oldNode, newNode Node[M, B]) Event[M, B] {
+	return Event[M, B]{
+		ID:   xid.New(),
+		Type: NodeUpdated,
+		Payload: NodeUpdatedPayload[M, B]{
+			OldNode: oldNode,
+			NewNode: newNode,
+		},
+	}
+}
+
+// NewNodeDeletedEvent creates a new NodeDeleted event.
+func NewNodeDeletedEvent[M, B any](node Node[M, B]) Event[M, B] {
+	return Event[M, B]{
+		ID:   xid.New(),
+		Type: NodeDeleted,
+		Payload: NodeDeletedPayload[M, B]{
+			Node: node,
+		},
+	}
+}
+
+// NewEdgeCreatedEvent creates a new EdgeCreated event.
+func NewEdgeCreatedEvent(edge Edge) Event[any, any] {
+	return Event[any, any]{
+		ID:   xid.New(),
+		Type: EdgeCreated,
+		Payload: EdgeCreatedPayload{
+			Edge: edge,
+		},
+	}
+}
+
+// NewEdgeUpdatedEvent creates a new EdgeUpdated event.
+func NewEdgeUpdatedEvent(oldEdge, newEdge Edge) Event[any, any] {
+	return Event[any, any]{
+		ID:   xid.New(),
+		Type: EdgeUpdated,
+		Payload: EdgeUpdatedPayload{
+			OldEdge: oldEdge,
+			NewEdge: newEdge,
+		},
+	}
+}
+
+// NewEdgeDeletedEvent creates a new EdgeDeleted event.
+func NewEdgeDeletedEvent(edge Edge) Event[any, any] {
+	return Event[any, any]{
+		ID:   xid.New(),
+		Type: EdgeDeleted,
+		Payload: EdgeDeletedPayload{
+			Edge: edge,
+		},
+	}
 }
