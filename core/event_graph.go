@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/rs/xid"
 )
@@ -140,6 +141,64 @@ type Graph[M, B any] struct {
 	ID    xid.ID                `json:"id"`    // Unique identifier for the graph
 	Nodes map[xid.ID]Node[M, B] `json:"nodes"` // Map of node IDs to nodes
 	Edges map[xid.ID]Edge       `json:"edges"` // Map of edge IDs to edges
+}
+
+// AddNode adds a node to the graph and returns a NodeCreated event.
+func (g *Graph[M, B]) AddNode(node Node[M, B]) (Event[M, B], error) {
+	if _, exists := g.Nodes[node.ID]; exists {
+		return Event[M, B]{}, fmt.Errorf("node with ID %s already exists", node.ID)
+	}
+	g.Nodes[node.ID] = node
+	return NewNodeCreatedEvent(node), nil
+}
+
+// UpdateNode updates a node in the graph and returns a NodeUpdated event.
+func (g *Graph[M, B]) UpdateNode(node Node[M, B]) (Event[M, B], error) {
+	oldNode, exists := g.Nodes[node.ID]
+	if !exists {
+		return Event[M, B]{}, fmt.Errorf("node with ID %s does not exist", node.ID)
+	}
+	g.Nodes[node.ID] = node
+	return NewNodeUpdatedEvent(oldNode, node), nil
+}
+
+// DeleteNode deletes a node from the graph and returns a NodeDeleted event.
+func (g *Graph[M, B]) DeleteNode(nodeID xid.ID) (Event[M, B], error) {
+	node, exists := g.Nodes[nodeID]
+	if !exists {
+		return Event[M, B]{}, fmt.Errorf("node with ID %s does not exist", nodeID)
+	}
+	delete(g.Nodes, nodeID)
+	return NewNodeDeletedEvent(node), nil
+}
+
+// AddEdge adds an edge to the graph and returns an EdgeCreated event.
+func (g *Graph[M, B]) AddEdge(edge Edge) (Event[any, any], error) {
+	if _, exists := g.Edges[edge.ID]; exists {
+		return Event[any, any]{}, fmt.Errorf("edge with ID %s already exists", edge.ID)
+	}
+	g.Edges[edge.ID] = edge
+	return NewEdgeCreatedEvent(edge), nil
+}
+
+// UpdateEdge updates an edge in the graph and returns an EdgeUpdated event.
+func (g *Graph[M, B]) UpdateEdge(edge Edge) (Event[any, any], error) {
+	oldEdge, exists := g.Edges[edge.ID]
+	if !exists {
+		return Event[any, any]{}, fmt.Errorf("edge with ID %s does not exist", edge.ID)
+	}
+	g.Edges[edge.ID] = edge
+	return NewEdgeUpdatedEvent(oldEdge, edge), nil
+}
+
+// DeleteEdge deletes an edge from the graph and returns an EdgeDeleted event.
+func (g *Graph[M, B]) DeleteEdge(edgeID xid.ID) (Event[any, any], error) {
+	edge, exists := g.Edges[edgeID]
+	if !exists {
+		return Event[any, any]{}, fmt.Errorf("edge with ID %s does not exist", edgeID)
+	}
+	delete(g.Edges, edgeID)
+	return NewEdgeDeletedEvent(edge), nil
 }
 
 // EventLog holds an append-only log of events.
