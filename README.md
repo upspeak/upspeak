@@ -4,6 +4,7 @@ Upspeak is a robust knowledge management and information processing system desig
 
 ![Project Status: Early Stage](https://img.shields.io/badge/status-early%20stage-yellow)
 ![Not Production Ready](https://img.shields.io/badge/production%20ready-no-red)
+[![Build and Test](https://github.com/upspeak/upspeak/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/upspeak/upspeak/actions/workflows/build-and-test.yml)
 
 ## Introduction
 
