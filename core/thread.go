@@ -1,6 +1,10 @@
 package core
 
-import "github.com/rs/xid"
+import (
+	"encoding/json"
+
+	"github.com/rs/xid"
+)
 
 const (
 	KindThread  Kind = "Thread"
@@ -21,12 +25,11 @@ type ThreadMetadata struct {
 type ThreadBody struct {
 	// Title for the thread
 	Title string `json:"title"`
-	// Content-Type of the Content field
-	ContentType string `json:"content_type"`
 	// The actual content of the thread's body
-	Content map[string]any `json:"content"`
+	Content json.RawMessage `json:"content"`
 }
 
+// NewThread creates a new thread starting from an existing root node
 // Thread is a higher order Node that links a list of Nodes through a parent-child relation. It extends core.Node.
 // The first Node in a Thread is the root Node.
 // Nodes in a thread can be created in reply to other Nodes in the same Thread.
@@ -35,27 +38,28 @@ type ThreadBody struct {
 // Nodes in a Thread are ordered by their creation time and their ID
 // Each Node in a thread can be of a different Datatype with its own Metadata and Body types.
 // Thread mutation functions should return Nodes and Edges based on the function.
-type Thread struct {
-	Node[ThreadMetadata, ThreadBody]
-}
-
-// NewThread creates a new thread starting from an existing root node
-func NewThread(body ThreadBody, author string) Thread {
+func NewThread(contentType string, body ThreadBody, author string) (Node, error) {
 	metadata := ThreadMetadata{
 		Author:  author,
 		Version: 1,
 		Props:   make(map[string]string),
 	}
-
-	return Thread{
-		Node: NewNode(KindThread, metadata, body),
+	jsonMetadata, err := json.Marshal(metadata)
+	if err != nil {
+		return Node{}, err
 	}
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return Node{}, err
+	}
+
+	return NewNode(KindThread, contentType, jsonMetadata, jsonBody), nil
 }
 
 // NewComment creates a new Node as a comment for a given thread id and creates a child edge
 // between the comment and the thread.
-func NewComment[M, B any](thread_id xid.ID, metadata M, body B) (Node[M, B], Edge) {
-	comment := NewNode(KindComment, metadata, body)
+func NewComment(thread_id xid.ID, contentType string, metadata, body json.RawMessage) (Node, Edge) {
+	comment := NewNode(KindComment, contentType, metadata, body)
 	edge := ChildEdge(comment.ID, thread_id)
 	return comment, edge
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // Common function to test Node JSON marshaling and unmarshaling
-func testNodeJSON[M, B any](t *testing.T, node *Node[M, B], expectedMetadata M, expectedBody B) {
+func testNodeJSON(t *testing.T, node *Node, expectedMetadata, expectedBody interface{}) {
 	// Marshal the Node to JSON
 	jsonData, err := json.Marshal(node)
 	if err != nil {
@@ -77,7 +77,7 @@ func compareMaps(a, b map[string]interface{}) bool {
 func TestNodeWithStringMetadataAndBody(t *testing.T) {
 	tests := []struct {
 		name     string
-		kind     string
+		kind     Kind
 		metadata string
 		body     string
 	}{
@@ -115,8 +115,10 @@ func TestNodeWithStringMetadataAndBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode(Kind(tt.kind), tt.metadata, tt.body)
-			testNodeJSON[string, string](t, &node, tt.metadata, tt.body)
+			metadata, _ := json.Marshal(tt.metadata)
+			body, _ := json.Marshal(tt.body)
+			node := NewNode(tt.kind, "text/plain", metadata, body)
+			testNodeJSON(t, &node, tt.metadata, tt.body)
 		})
 	}
 }
@@ -134,7 +136,7 @@ type TextNodeBody struct {
 func TestNodeWithCustomStructMetadataAndBody(t *testing.T) {
 	tests := []struct {
 		name     string
-		kind     string
+		kind     Kind
 		metadata TextNodeMetadata
 		body     TextNodeBody
 	}{
@@ -149,8 +151,10 @@ func TestNodeWithCustomStructMetadataAndBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NewNode(Kind(tt.kind), tt.metadata, tt.body)
-			testNodeJSON[TextNodeMetadata, TextNodeBody](t, &node, tt.metadata, tt.body)
+			metadata, _ := json.Marshal(tt.metadata)
+			body, _ := json.Marshal(tt.body)
+			node := NewNode(tt.kind, "text/plain", metadata, body)
+			testNodeJSON(t, &node, tt.metadata, tt.body)
 		})
 	}
 }
@@ -166,7 +170,6 @@ func TestKindJSONMarshaling(t *testing.T) {
 			kind:     "exampleKind",
 			expected: `"exampleKind"`,
 		},
-		// Question: Should an empty Kind be allowed? Allowing for now.
 		{
 			name:     "empty kind",
 			kind:     "",

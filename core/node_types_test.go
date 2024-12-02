@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -18,17 +19,27 @@ func TestTextNode(t *testing.T) {
 		if node.Kind != KindNode {
 			t.Errorf("expected KindNode, got %v", node.Kind)
 		}
-		if node.Metadata.Author != tt.author {
-			t.Errorf("expected author %v, got %v", tt.author, node.Metadata.Author)
+
+		var metadata TextMetadata
+		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
+			t.Errorf("failed to unmarshal metadata: %v", err)
 		}
-		if node.Body.Content.Text != tt.content.Text {
-			t.Errorf("expected text %v, got %v", tt.content.Text, node.Body.Content.Text)
+		if metadata.Author != tt.author {
+			t.Errorf("expected author %v, got %v", tt.author, metadata.Author)
 		}
-		if node.Body.Content.HTML != tt.content.HTML {
-			t.Errorf("expected HTML %v, got %v", tt.content.HTML, node.Body.Content.HTML)
+
+		var body TextBody
+		if err := json.Unmarshal(node.Body, &body); err != nil {
+			t.Errorf("failed to unmarshal body: %v", err)
 		}
-		if node.Body.ContentType != "text/plain" {
-			t.Errorf("expected content type text/plain, got %v", node.Body.ContentType)
+		if body.Content.Text != tt.content.Text {
+			t.Errorf("expected text %v, got %v", tt.content.Text, body.Content.Text)
+		}
+		if body.Content.HTML != tt.content.HTML {
+			t.Errorf("expected HTML %v, got %v", tt.content.HTML, body.Content.HTML)
+		}
+		if body.ContentType != "text/plain" {
+			t.Errorf("expected content type text/plain, got %v", body.ContentType)
 		}
 	}
 }
@@ -56,23 +67,33 @@ func TestMarkdownNode(t *testing.T) {
 		if node.Kind != KindNode {
 			t.Errorf("expected KindNode, got %v", node.Kind)
 		}
-		if node.Metadata.Author != tt.author {
-			t.Errorf("expected author %v, got %v", tt.author, node.Metadata.Author)
+
+		var metadata MarkdownMetadata
+		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
+			t.Errorf("failed to unmarshal metadata: %v", err)
 		}
-		if node.Metadata.FrontMatter["title"] != tt.frontmatter["title"] {
-			t.Errorf("expected frontmatter title %v, got %v", tt.frontmatter["title"], node.Metadata.FrontMatter["title"])
+		if metadata.Author != tt.author {
+			t.Errorf("expected author %v, got %v", tt.author, metadata.Author)
 		}
-		if node.Metadata.FrontMatter["date"] != tt.frontmatter["date"] {
-			t.Errorf("expected frontmatter date %v, got %v", tt.frontmatter["date"], node.Metadata.FrontMatter["date"])
+		if metadata.FrontMatter["title"] != tt.frontmatter["title"] {
+			t.Errorf("expected frontmatter title %v, got %v", tt.frontmatter["title"], metadata.FrontMatter["title"])
 		}
-		if node.Body.Content.Text != tt.content.Text {
-			t.Errorf("expected text %v, got %v", tt.content.Text, node.Body.Content.Text)
+		if metadata.FrontMatter["date"] != tt.frontmatter["date"] {
+			t.Errorf("expected frontmatter date %v, got %v", tt.frontmatter["date"], metadata.FrontMatter["date"])
 		}
-		if node.Body.Content.HTML != tt.content.HTML {
-			t.Errorf("expected HTML %v, got %v", tt.content.HTML, node.Body.Content.HTML)
+
+		var body TextBody
+		if err := json.Unmarshal(node.Body, &body); err != nil {
+			t.Errorf("failed to unmarshal body: %v", err)
 		}
-		if node.Body.ContentType != "text/markdown" {
-			t.Errorf("expected content type text/markdown, got %v", node.Body.ContentType)
+		if body.Content.Text != tt.content.Text {
+			t.Errorf("expected text %v, got %v", tt.content.Text, body.Content.Text)
+		}
+		if body.Content.HTML != tt.content.HTML {
+			t.Errorf("expected HTML %v, got %v", tt.content.HTML, body.Content.HTML)
+		}
+		if body.ContentType != "text/markdown" {
+			t.Errorf("expected content type text/markdown, got %v", body.ContentType)
 		}
 	}
 }

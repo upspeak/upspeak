@@ -1,5 +1,7 @@
 package core
 
+import "encoding/json"
+
 const (
 	// KindNode represents a standalone (isolated) Node.
 	// In a threaded discussion model, these are Nodes that don't belong to any Thread in the graph.
@@ -48,17 +50,19 @@ type TextBody struct {
 // TextNode returns a Node of KindNode with TextMetadata and TextBody
 // Use this function to create a standalone Node.
 // If you want to create a Node that is part of a Thread, use NewComment.
-func TextNode(content TextContent, author string) Node[TextMetadata, TextBody] {
+func TextNode(content TextContent, author string) Node {
 	metadata := TextMetadata{
 		Author:  author,
 		Version: 1,
 		Props:   make(map[string]string),
 	}
+	metadataBytes, _ := json.Marshal(metadata)
 	body := TextBody{
 		ContentType: "text/plain",
 		Content:     content,
 	}
-	return NewNode(KindNode, metadata, body)
+	bodyBytes, _ := json.Marshal(body)
+	return NewNode(KindNode, "text/plain", metadataBytes, bodyBytes)
 }
 
 // MarkdownNode returns a Node of KindNode with MarkdownMetadata and TextBody
@@ -67,16 +71,18 @@ func TextNode(content TextContent, author string) Node[TextMetadata, TextBody] {
 //
 // Note: this function does not handle any markdown parsing. It is the caller's responsibility
 // to ensure that the content is valid markdown.
-func MarkdownNode(content TextContent, frontmatter map[string]string, author string) Node[MarkdownMetadata, TextBody] {
+func MarkdownNode(content TextContent, frontmatter map[string]string, author string) Node {
 	metadata := MarkdownMetadata{
 		Author:      author,
 		Version:     1,
 		FrontMatter: frontmatter,
 		Props:       make(map[string]string),
 	}
+	metadataBytes, _ := json.Marshal(metadata)
 	body := TextBody{
 		ContentType: "text/markdown",
 		Content:     content,
 	}
-	return NewNode(KindNode, metadata, body)
+	bodyBytes, _ := json.Marshal(body)
+	return NewNode(KindNode, "text/markdown", metadataBytes, bodyBytes)
 }

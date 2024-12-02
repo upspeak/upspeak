@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/rs/xid"
@@ -34,8 +35,13 @@ func validateEdge(t *testing.T, edge Edge, expectedType string, expectedSource, 
 
 func TestReplyEdge(t *testing.T) {
 	// Create two Text Nodes
-	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
-	node2 := NewNode(KindText, map[string]interface{}{"author": "Bob"}, map[string]interface{}{"content": "Hi"})
+	metadata1, _ := json.Marshal(map[string]interface{}{"author": "Alice"})
+	body1, _ := json.Marshal(map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, "text/plain", metadata1, body1)
+
+	metadata2, _ := json.Marshal(map[string]interface{}{"author": "Bob"})
+	body2, _ := json.Marshal(map[string]interface{}{"content": "Hi"})
+	node2 := NewNode(KindText, "text/plain", metadata2, body2)
 
 	// Create a ReplyEdge marking the second node as a reply to the first
 	edge := ReplyEdge(node1.ID, node2.ID)
@@ -46,10 +52,14 @@ func TestReplyEdge(t *testing.T) {
 
 func TestAnnotationEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	metadata1, _ := json.Marshal(map[string]interface{}{"author": "Alice"})
+	body1, _ := json.Marshal(map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, "text/plain", metadata1, body1)
 
 	// Create a URL Node
-	node2 := NewNode("url", map[string]interface{}{"author": "Bob"}, map[string]interface{}{"url": "http://example.com"})
+	metadata2, _ := json.Marshal(map[string]interface{}{"author": "Bob"})
+	body2, _ := json.Marshal(map[string]interface{}{"url": "http://example.com"})
+	node2 := NewNode("url", "text/plain", metadata2, body2)
 
 	// Create an AnnotationEdge marking the second node as an annotation of the first
 	edge := AnnotationEdge(node1.ID, node2.ID)
@@ -60,10 +70,14 @@ func TestAnnotationEdge(t *testing.T) {
 
 func TestForkEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	metadata1, _ := json.Marshal(map[string]interface{}{"author": "Alice"})
+	body1, _ := json.Marshal(map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, "text/plain", metadata1, body1)
 
 	// Create another Text Node with the same content, but a different ID
-	node2 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	metadata2, _ := json.Marshal(map[string]interface{}{"author": "Alice"})
+	body2, _ := json.Marshal(map[string]interface{}{"content": "Hello"})
+	node2 := NewNode(KindText, "text/plain", metadata2, body2)
 
 	// Create a ForkEdge marking the second node as a fork of the first
 	edge := ForkEdge(node1.ID, node2.ID)
@@ -78,10 +92,14 @@ func TestForkEdge(t *testing.T) {
 
 func TestAttachmentEdge(t *testing.T) {
 	// Create a Text Node
-	node1 := NewNode(KindText, map[string]interface{}{"author": "Alice"}, map[string]interface{}{"content": "Hello"})
+	metadata1, _ := json.Marshal(map[string]interface{}{"author": "Alice"})
+	body1, _ := json.Marshal(map[string]interface{}{"content": "Hello"})
+	node1 := NewNode(KindText, "text/plain", metadata1, body1)
 
 	// Create an Image Node with a URL field in its Body
-	node2 := NewNode(KindImage, map[string]interface{}{"author": "Bob"}, map[string]interface{}{"url": "http://example.com/image.jpg"})
+	metadata2, _ := json.Marshal(map[string]interface{}{"author": "Bob"})
+	body2, _ := json.Marshal(map[string]interface{}{"url": "http://example.com/image.jpg"})
+	node2 := NewNode(KindImage, "image/jpeg", metadata2, body2)
 
 	// Create an AttachmentEdge marking the second node as an attachment of the first
 	edge := AttachmentEdge(node1.ID, node2.ID)
