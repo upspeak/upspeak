@@ -2,43 +2,28 @@
 
 ## Goals
 
-The `app` package is a foundational micro-framework for building and running the Upspeak application. Its primary aims are:
+The `app` package is a lightweight, modular, foundational micro-framework based on [NATS](https://nats.io) for building and running the Upspeak application. Its primary aims are:
 
-1. **Modularity**: Enable declarative, event-driven modules for tasks like HTTP endpoints and message handling.
-2. **Infrastructure Abstraction**: Simplify usage of messaging (NATS) and API services (HTTP).
-3. **Ease of Development**: Provide a consistent developer experience with clear abstractions and configurations.
-4. **Standalone**: Offer lightweight deployments via embedded NATS while supporting external setups.
+1. **Composable; Modular**: Enable declarative, event-driven modules. Compose an application out of these modules, without the modules having to worry about macro-architectural decisions.
+2. **Flexible deployment**: Produce a single binary. Deploy as standalone, or run specific modules to create distributed deployments. Offer lightweight deployments via embedded NATS while supporting external NATS setups.
+3. **Simplify till it hurts, without compromising functionality**: Thanks, NATS, for making _this_ possible.
 
-## Non-Goals
+## Important note
 
-1. **Standalone Framework**: It is tailored for Upspeak, not as a general-purpose framework.
-2. **Dynamic Reconfiguration**: Relies on conventions like YAML files, without advanced runtime reconfiguration.
+1. This package is tailored for Upspeak. _It is not intended to be a general-purpose framework_. Avoid dependending on this package for other projects. Copy/Fork if you like it that much.
+2. Relies on configurations from YAML/JSON files, without advanced runtime reconfiguration, at least for now.
+3. Not intended to support multiple message queues to keep the intra-system and inter-module communication simple; embracing NATS. Offload as much of the requirements to NATS as possible.
 
-## Features
+## Key concepts
 
-- **Modular Architecture**: Manage independent modules.
-- **HTTP Server**: Built-in support for HTTP endpoints.
-- **NATS Integration**:
-  - Supports embedded and external NATS servers.
-  - Provides publisher and subscriber abstractions.
-- **Health Probes**: Designed for containerized environments.
-- **Structured Configurations**: Uses `viper` for YAML, environment variables, and defaults.
-
-## Structure
-
-### Core Types
-
-1. **App**: Manages modules, HTTP servers, and NATS connections.
-2. **Module**: Interface for modular components with HTTP and NATS handlers.
-3. **Publisher**: Handles message publication.
-4. **Config**: Encapsulates app configuration, including NATS and HTTP settings.
-
-### Key Components
-
+- **App**: Composes modules, and manages HTTP servers with namespaced module routes, and NATS connections. Responsible for the entire application lifecycle.
+- **Module**: Interface for modular components with HTTP and NATS handlers.
+- **Publisher**: Handles message publication.
+- **Config**: Encapsulates app configuration, including NATS and HTTP settings.
+- **Embedded NATS Server**: Runs an in-process instance.
 - **Health/Readiness Endpoints**:
   - `/healthz`: Returns 200 if operational.
   - `/readiness`: Returns 200 if ready, otherwise 503.
-- **Embedded NATS Server**: Runs an in-process instance.
 - **Lifecycle Management**:
   - `Start`: Initializes modules, NATS, and HTTP server.
   - `Stop`: Gracefully shuts down components.
@@ -130,6 +115,8 @@ if err := myApp.Start(); err != nil {
 }
 ```
 
+Based on the code above, the `example` module's endpoints will now be mounted at `GET http://localhost:8080/example/hello`.
+
 6. **Stop the App**
 
 ```go
@@ -140,8 +127,8 @@ if err := myApp.Stop(); err != nil {
 
 ### Health and Readiness Probes
 
-- `/healthz`: Basic liveness check.
-- `/readiness`: Readiness check; returns 503 if not ready.
+- `GET /healthz`: Basic liveness check.
+- `GET /readiness`: Readiness check; returns 503 if not ready.
 
 ### Configuration via Environment Variables
 
