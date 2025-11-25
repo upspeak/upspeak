@@ -35,7 +35,6 @@ func TestFullAppLifecycle(t *testing.T) {
 
 	// Create app instance
 	app := New(config)
-	app.modules = make(map[string]Module)
 
 	// Create test module with both HTTP and NATS handlers
 	module := newMockModule("test-module")
@@ -52,7 +51,9 @@ func TestFullAppLifecycle(t *testing.T) {
 		messageReceived <- true
 	})
 
-	app.AddModule(module)
+	if err := app.AddModule(module); err != nil {
+		t.Fatalf("Failed to add module: %v", err)
+	}
 
 	// Start the app
 	if err := app.Start(); err != nil {

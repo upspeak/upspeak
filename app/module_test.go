@@ -13,27 +13,33 @@ func TestModuleRegistration(t *testing.T) {
 			Private:  true,
 		},
 	})
-	app.modules = make(map[string]Module)
 
 	// Test adding a module
 	module := newMockModule("test-module")
-	app.AddModule(module)
+	if err := app.AddModule(module); err != nil {
+		t.Fatalf("Failed to add module: %v", err)
+	}
 
 	if len(app.modules) != 1 {
 		t.Errorf("Expected 1 module, got %d", len(app.modules))
 	}
 
-	if app.modules["test-module"] != module {
+	if app.modules["test-module"].module != module {
 		t.Error("Module not properly registered")
+	}
+
+	// Verify module is mounted at /test-module by default
+	if app.modules["test-module"].path != "/test-module" {
+		t.Errorf("Expected path /test-module, got %s", app.modules["test-module"].path)
 	}
 }
 
 func TestModuleInitialization(t *testing.T) {
 	tests := []struct {
-		name        string
+		name         string
 		moduleConfig map[string]ModuleConfig
-		initError   error
-		wantError   bool
+		initError    error
+		wantError    bool
 	}{
 		{
 			name: "successful initialization",
@@ -80,13 +86,14 @@ func TestModuleInitialization(t *testing.T) {
 				},
 				Modules: tt.moduleConfig,
 			})
-			app.modules = make(map[string]Module)
 
 			module := newMockModule("test-module")
 			if tt.initError != nil {
 				module.setInitError(tt.initError)
 			}
-			app.AddModule(module)
+			if err := app.AddModule(module); err != nil {
+				t.Fatalf("Failed to add module: %v", err)
+			}
 
 			err := app.Start()
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,13 +44,20 @@ type Module interface {
 	MsgHandlers(pub Publisher) []MsgHandler
 }
 
+// moduleMount represents a module and its mount path
+type moduleMount struct {
+	module Module
+	path   string // Normalized mount path ("" for root, "/api", "/writer", etc.)
+}
+
 type App struct {
 	config     Config
 	nc         *nats.Conn
 	ns         *natsserver.Server
 	httpServer *http.Server
 	httpRouter *http.ServeMux
-	modules    map[string]Module
+	modules    map[string]moduleMount // Module name -> moduleMount
+	rootModule string                 // Track which module (if any) is at root
 	logger     *slog.Logger
 	ready      bool
 	readyLock  sync.RWMutex
@@ -62,14 +70,172 @@ func New(config Config) *App {
 		config:     config,
 		httpRouter: http.NewServeMux(),
 		logger:     logger,
-		modules:    make(map[string]Module),
+		modules:    make(map[string]moduleMount),
 	}
 }
 
-// AddModule registers a module with the app.
-func (a *App) AddModule(module Module) {
-	a.logger.Info("Adding module...", "module", module.Name())
-	a.modules[module.Name()] = module
+// normalizePath normalizes a mount path for consistent handling
+func normalizePath(path string) string {
+	// Trim whitespace
+	path = strings.TrimSpace(path)
+
+	// Empty string means root
+	if path == "" {
+		return ""
+	}
+
+	// Ensure leading slash
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	// Remove trailing slash (except for root)
+	path = strings.TrimSuffix(path, "/")
+
+	return path
+}
+
+// isReservedPath checks if a path conflicts with system endpoints
+func isReservedPath(path string) bool {
+	reservedPaths := []string{"/healthz", "/readiness"}
+	for _, reserved := range reservedPaths {
+		if path == reserved || strings.HasPrefix(path, reserved+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// AddModuleOnPath registers a module at the specified path.
+//
+// Path rules:
+//   - Empty string "" mounts at root (/)
+//   - Leading slash is optional and will be normalized
+//   - Trailing slashes are removed
+//   - Only one module can be mounted at root
+//   - Paths cannot conflict with reserved system paths (/healthz, /readiness)
+//
+// Examples:
+//
+//	app.AddModuleOnPath(&ui.Module{}, "")         // Root: /
+//	app.AddModuleOnPath(&api.Module{}, "/api")    // Namespaced: /api/*
+//	app.AddModuleOnPath(&writer.Module{}, "v1")   // Namespaced: /v1/*
+func (a *App) AddModuleOnPath(module Module, path string) error {
+	moduleName := module.Name()
+
+	// Check if module already registered
+	if _, exists := a.modules[moduleName]; exists {
+		return fmt.Errorf("module %s is already registered", moduleName)
+	}
+
+	// Normalize the path
+	normalizedPath := normalizePath(path)
+
+	// Prevent path traversal attempts
+	if strings.Contains(normalizedPath, "..") {
+		return fmt.Errorf("invalid path: path traversal not allowed")
+	}
+
+	// Check for reserved path conflicts
+	if isReservedPath(normalizedPath) {
+		return fmt.Errorf("path %s conflicts with reserved system endpoint", normalizedPath)
+	}
+
+	// Check root mounting restriction
+	if normalizedPath == "" {
+		if a.rootModule != "" {
+			return fmt.Errorf(
+				"cannot mount module %s at root: module %s is already mounted at root",
+				moduleName, a.rootModule,
+			)
+		}
+		a.rootModule = moduleName
+	}
+
+	// Check for exact path conflicts with other modules
+	for name, mount := range a.modules {
+		if mount.path == normalizedPath {
+			return fmt.Errorf(
+				"path conflict: module %s is already mounted at %s",
+				name, normalizedPath,
+			)
+		}
+	}
+
+	a.logger.Info("Adding module",
+		"module", moduleName,
+		"path", normalizedPath,
+		"isRoot", normalizedPath == "")
+
+	a.modules[moduleName] = moduleMount{
+		module: module,
+		path:   normalizedPath,
+	}
+
+	return nil
+}
+
+// AddModule registers a module at /<module.Name()>/.
+// This is a convenience wrapper around AddModuleOnPath.
+func (a *App) AddModule(module Module) error {
+	// Use module name as the path
+	return a.AddModuleOnPath(module, module.Name())
+}
+
+// registerModule initializes a module and registers its handlers
+func (a *App) registerModule(name string, mount moduleMount, pub Publisher) error {
+	module := mount.module
+
+	// Check if module is disabled in config
+	modConfig, exists := a.config.Modules[name]
+	if exists && !modConfig.Enabled {
+		a.logger.Warn("Skipping disabled module", "module", name)
+		return nil
+	}
+
+	a.logger.Info("Initializing module", "module", name)
+
+	// Initialize module
+	if err := module.Init(modConfig.Config); err != nil {
+		a.logger.Error("Failed to initialize module", "module", name, "error", err)
+		return err
+	}
+
+	// Register NATS subscribers
+	for _, handler := range module.MsgHandlers(pub) {
+		a.logger.Info("Subscribing to NATS subject",
+			"subject", handler.Subject,
+			"module", name)
+		if _, err := a.nc.Subscribe(handler.Subject, handler.Handler); err != nil {
+			return fmt.Errorf("failed to subscribe to %s: %w", handler.Subject, err)
+		}
+	}
+
+	// Register HTTP handlers
+	for _, handler := range module.HTTPHandlers(pub) {
+		fullPath := a.buildHandlerPath(mount.path, handler.Path)
+		a.logger.Info("Registering HTTP handler",
+			"path", fullPath,
+			"module", name,
+			"method", handler.Method)
+
+		// Register handler with method pattern
+		pattern := handler.Method + " " + fullPath
+		a.httpRouter.HandleFunc(pattern, handler.Handler)
+	}
+
+	return nil
+}
+
+// buildHandlerPath constructs the full path for a handler based on the module's mount path
+func (a *App) buildHandlerPath(mountPath, handlerPath string) string {
+	if mountPath == "" {
+		// Root mounting: use handler path as-is
+		return handlerPath
+	}
+
+	// Namespaced mounting: concatenate mount path + handler path
+	return mountPath + handlerPath
 }
 
 func (a *App) Start() error {
@@ -84,35 +250,21 @@ func (a *App) Start() error {
 	// 2 - Bootstrap modules
 	pub := Publisher{nc: a.nc}
 
-	for name, module := range a.modules {
-		// 2.a - Skip any module that has been explicitly disabled
-		// TODO: Validate use case to decide modules should be explicitly enabled or explicitly disabled
-		modConfig, exists := a.config.Modules[name]
-		if exists && !modConfig.Enabled {
-			a.logger.Warn("Skipping disabled module", "module", name)
-			continue
+	// First pass: Register all non-root modules
+	for name, mount := range a.modules {
+		if mount.path == "" {
+			continue // Skip root module for now
 		}
-
-		a.logger.Info("Initializing module...", "module", name)
-
-		// 2.a - Initialize module
-		if err := module.Init(modConfig.Config); err != nil {
-			a.logger.Error("Failed to initialize module", "module", name, "error", err)
+		if err := a.registerModule(name, mount, pub); err != nil {
 			return err
 		}
+	}
 
-		// 2.b - Register NATS subscribers for module
-		for _, handler := range module.MsgHandlers(pub) {
-			a.logger.Info("Subscribing to NATS subject", "subject", handler.Subject, "module", name)
-			a.nc.Subscribe(handler.Subject, handler.Handler)
-		}
-
-		// 2.c - Register HTTP handlers for module
-		for _, handler := range module.HTTPHandlers(pub) {
-			// Prefix the module name to the handler path
-			namespacedPath := "/" + name + handler.Path
-			a.logger.Info("Registering HTTP handler", "path", namespacedPath, "module", name)
-			a.httpRouter.HandleFunc(namespacedPath, handler.Handler)
+	// Second pass: Register root module last (gives it priority for catch-all routing)
+	if a.rootModule != "" {
+		mount := a.modules[a.rootModule]
+		if err := a.registerModule(a.rootModule, mount, pub); err != nil {
+			return err
 		}
 	}
 
