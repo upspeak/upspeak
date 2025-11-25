@@ -316,7 +316,7 @@ func TestModuleRegistrationOrder(t *testing.T) {
 
 	// Add modules in specific order: root, then namespaced
 	uiModule := newMockModule("ui")
-	uiModule.addHTTPHandler("GET", "/", func(w http.ResponseWriter, r *http.Request) {
+	uiModule.addHTTPHandler("GET", "/home", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("UI"))
 	})
 
