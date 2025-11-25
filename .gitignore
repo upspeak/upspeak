@@ -40,3 +40,6 @@ $RECYCLE.BIN/
 
 # Linux
 *~
+
+# Upspeak default config file
+/upspeak.yaml

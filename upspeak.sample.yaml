@@ -1,0 +1,12 @@
+name: "upspeak"
+nats:
+  embedded: true
+  private: false
+  logging: false
+http:
+  port: 8080
+modules:
+  writer:
+    enabled: true
+    config:
+      key: "value"

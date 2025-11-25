@@ -270,8 +270,8 @@ func (a *App) Start() error {
 
 	// 3 - Register health and readiness endpoints
 	a.logger.Info("Registering health and readiness endpoints")
-	a.httpRouter.HandleFunc("/healthz", a.healthzHandler)
-	a.httpRouter.HandleFunc("/readiness", a.readinessHandler)
+	a.httpRouter.HandleFunc("GET /healthz", a.healthzHandler)
+	a.httpRouter.HandleFunc("GET /readiness", a.readinessHandler)
 
 	// 4 - Start HTTP server
 	serverErr := make(chan error, 1)
