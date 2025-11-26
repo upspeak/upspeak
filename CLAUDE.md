@@ -222,13 +222,47 @@ MsgHandler struct {
 - Paths cannot conflict with reserved endpoints (`/healthz`, `/readiness`)
 - Root module handlers are registered last for proper catch-all routing
 
+## Frontend Integration (ui module)
+
+**Embedding strategy:**
+- `//go:embed web/build/*` - SvelteKit production build
+- `//go:embed web/static/*` - Static assets (favicon, robots.txt)
+- Handler order matters: `/_app/` assets → static files → SPA fallback (`/`)
+
+**SPA routing:** All unmatched routes serve `index.html` for client-side routing
+
+**Build requirement:** Must run `cd ui/web && npm run build` before `go build` to populate embed directives
+
+**Development with hot reload:** `cd ui/web && npm run dev` (runs on :5173, proxy to :8080 for backend API)
+
+**Embedding pattern example:**
+```go
+//go:embed web/build/*
+var buildFS embed.FS
+
+// Access files with "web/build" prefix
+data, err := buildFS.ReadFile("web/build/index.html")
+```
+
 ## NATS Communication Patterns
 
-**Repository subjects:**
+**Module subjects:** Each module defines its own subject namespace:
+```go
+func (m *ModuleExample) MsgHandlers(pub app.Publisher) []app.MsgHandler {
+	return []app.MsgHandler{
+		{
+			Subject: "example.events",  // Use module-specific namespace
+			Handler: m.handleEvent,
+		},
+	}
+}
+```
+
+**Repository subjects (core/ domain only):**
 - Input events: `repos.{id}.in` - for commands/operations
 - Output events: `repos.{id}.out` - for event notifications
 
-**Publishing events:**
+**Publishing events from Repository:**
 ```go
 event, err := NewEvent(EventNodeCreated, EventNodeCreatePayload{Node: node})
 if err != nil {
@@ -238,6 +272,28 @@ if err := r.publishEvent(event); err != nil {
 	return &ErrorPublish{msg: "EventNodeCreated"}
 }
 ```
+
+## Configuration
+
+**YAML-based:** See `upspeak.sample.yaml` for structure
+
+```yaml
+name: "upspeak"
+nats:
+  embedded: true   # Run in-process NATS server
+  private: false   # Allow external connections
+  logging: false   # Enable NATS debug logging
+http:
+  port: 8080
+modules:
+  writer:
+    enabled: true
+    config: {...}   # Module-specific configuration
+```
+
+**Module config:** Passed to `Module.Init(config map[string]any)` from YAML `modules.<name>.config`
+
+**First-time setup:** `cp upspeak.sample.yaml upspeak.yaml` before running `./build.sh dev`
 
 ## HTTP Routing (Go 1.22+ Pattern Matching)
 
@@ -395,6 +451,17 @@ if logPath == "" {
 }
 a.logger.Info("Initialising module", "module", name, "path", logPath)
 ```
+
+## Common Pitfalls
+
+1. **Don't build manually** - Always use `build.sh` to ensure frontend embeds correctly. Running `go build` directly will fail or produce broken binaries if frontend isn't built.
+2. **Module paths** - Root path is `""` (empty string), not `"/"`. Use `AddModuleOnPath(module, "")` for root mounting.
+3. **Event payloads** - Always unmarshal to specific payload types (e.g., `EventNodeCreatePayload`), not generic maps.
+4. **NATS subjects** - Modules define their own subject namespaces (e.g., `"writer.events"`). Only `Repository` (in `core/`) uses the `repos.{id}.in/out` pattern.
+5. **Embedded FS paths** - Use `"web/build"` prefix when accessing `buildFS.ReadFile()`. The embed directive includes the directory structure.
+6. **HTTP method patterns** - Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts with catch-all handlers.
+7. **Reserved paths** - Never mount modules at `/healthz` or `/readiness` (system endpoints).
+8. **json.RawMessage** - Has known performance penalties. Use for flexibility but validate thoroughly.
 
 ## Getting Help
 
