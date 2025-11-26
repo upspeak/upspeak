@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/upspeak/upspeak/app"
-	"github.com/upspeak/upspeak/modules/ui"
+	"github.com/upspeak/upspeak/ui"
 )
 
 func main() {
