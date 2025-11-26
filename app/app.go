@@ -186,8 +186,10 @@ func (a *App) AddModule(module Module) error {
 func (a *App) registerModule(name string, mount moduleMount, pub Publisher) error {
 	module := mount.module
 
-	// Check if module is disabled in config
+	// Get module configuration from config file
 	modConfig, exists := a.config.Modules[name]
+
+	// If module exists in config but is disabled, skip it
 	if exists && !modConfig.Enabled {
 		a.logger.Warn("Skipping disabled module", "module", name)
 		return nil
@@ -195,8 +197,13 @@ func (a *App) registerModule(name string, mount moduleMount, pub Publisher) erro
 
 	a.logger.Info("Initializing module", "module", name)
 
-	// Initialize module
-	if err := module.Init(modConfig.Config); err != nil {
+	// Initialize module with config (nil if module not in config file)
+	var moduleConfig map[string]any
+	if exists {
+		moduleConfig = modConfig.Config
+	}
+
+	if err := module.Init(moduleConfig); err != nil {
 		a.logger.Error("Failed to initialize module", "module", name, "error", err)
 		return err
 	}

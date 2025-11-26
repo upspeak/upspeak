@@ -3,6 +3,7 @@ module github.com/upspeak/upspeak
 go 1.25.4
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/nats-io/nats-server/v2 v2.12.2
 	github.com/nats-io/nats.go v1.47.0
 	github.com/rs/xid v1.6.0

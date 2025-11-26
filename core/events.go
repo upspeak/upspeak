@@ -11,20 +11,26 @@ type EventType string
 
 const (
 	// Input events
-	EventCreateNode EventType = "CreateNode"
-	EventUpdateNode EventType = "UpdateNode"
-	EventDeleteNode EventType = "DeleteNode"
-	EventCreateEdge EventType = "CreateEdge"
-	EventUpdateEdge EventType = "UpdateEdge"
-	EventDeleteEdge EventType = "DeleteEdge"
+	EventCreateNode   EventType = "CreateNode"
+	EventUpdateNode   EventType = "UpdateNode"
+	EventDeleteNode   EventType = "DeleteNode"
+	EventCreateEdge   EventType = "CreateEdge"
+	EventUpdateEdge   EventType = "UpdateEdge"
+	EventDeleteEdge   EventType = "DeleteEdge"
+	EventCreateThread EventType = "CreateThread"
+	EventUpdateThread EventType = "UpdateThread"
+	EventDeleteThread EventType = "DeleteThread"
 
 	// Node and Edge event types post-processing
-	EventNodeCreated EventType = "NodeCreated"
-	EventNodeUpdated EventType = "NodeUpdated"
-	EventNodeDeleted EventType = "NodeDeleted"
-	EventEdgeCreated EventType = "EdgeCreated"
-	EventEdgeUpdated EventType = "EdgeUpdated"
-	EventEdgeDeleted EventType = "EdgeDeleted"
+	EventNodeCreated   EventType = "NodeCreated"
+	EventNodeUpdated   EventType = "NodeUpdated"
+	EventNodeDeleted   EventType = "NodeDeleted"
+	EventEdgeCreated   EventType = "EdgeCreated"
+	EventEdgeUpdated   EventType = "EdgeUpdated"
+	EventEdgeDeleted   EventType = "EdgeDeleted"
+	EventThreadCreated EventType = "ThreadCreated"
+	EventThreadUpdated EventType = "ThreadUpdated"
+	EventThreadDeleted EventType = "ThreadDeleted"
 )
 
 // Event represents an event in the graph, which can be related to either Nodes or Edges.
@@ -58,6 +64,19 @@ type EventEdgeUpdatePayload struct {
 
 type EventEdgeDeletePayload struct {
 	EdgeId xid.ID `json:"edge_id"` // The id for the deleted Edge
+}
+
+type EventThreadCreatePayload struct {
+	Thread *Thread `json:"thread"` // The created thread
+}
+
+type EventThreadUpdatePayload struct {
+	ThreadId      xid.ID  `json:"thread_id"`      // The id of the Thread being updated (same as Node ID)
+	UpdatedThread *Thread `json:"updated_thread"` // The new state of the thread
+}
+
+type EventThreadDeletePayload struct {
+	ThreadId xid.ID `json:"thread_id"` // The deleted thread (same as Node ID)
 }
 
 func NewEvent(eventType EventType, payload any) (*Event, error) {

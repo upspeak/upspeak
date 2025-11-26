@@ -2,6 +2,8 @@ package core
 
 import "github.com/rs/xid"
 
+// Archive defines the interface for persistent storage of domain entities.
+// Implementations should handle storage of Nodes, Edges, Threads, and Annotations.
 type Archive interface {
 	// Node operations
 	SaveNode(node *Node) error
@@ -22,8 +24,4 @@ type Archive interface {
 	SaveAnnotation(annotation *Annotation) error
 	GetAnnotation(nodeID xid.ID) (*Annotation, error)
 	DeleteAnnotation(nodeID xid.ID) error
-
-	// Sync repository state
-	ReplayEvents(events []Event) error
-	LoadEvents() ([]Event, error)
 }

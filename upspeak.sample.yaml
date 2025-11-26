@@ -6,6 +6,16 @@ nats:
 http:
   port: 8080
 modules:
+  archive:
+    enabled: true
+    config:
+      type: "local"
+      path: "./data"
+  repo:
+    enabled: true
+    config:
+      repo_id: ""  # Auto-generated if not specified
+      repo_name: "default"
   writer:
     enabled: true
     config:

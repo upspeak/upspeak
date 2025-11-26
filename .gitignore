@@ -43,3 +43,4 @@ $RECYCLE.BIN/
 
 # Upspeak default config file
 /upspeak.yaml
+/data/

@@ -177,3 +177,101 @@ func TestHTTPServerFailure(t *testing.T) {
 	app1.Stop()
 	app2.Stop()
 }
+
+func TestModuleConfigurationPassing(t *testing.T) {
+	tests := []struct {
+		name           string
+		moduleConfig   map[string]ModuleConfig
+		moduleName     string
+		expectedConfig map[string]any
+	}{
+		{
+			name: "module with configuration",
+			moduleConfig: map[string]ModuleConfig{
+				"test-module": {
+					Enabled: true,
+					Config: map[string]any{
+						"key1": "value1",
+						"key2": 42,
+					},
+				},
+			},
+			moduleName: "test-module",
+			expectedConfig: map[string]any{
+				"key1": "value1",
+				"key2": 42,
+			},
+		},
+		{
+			name:           "module without configuration",
+			moduleConfig:   map[string]ModuleConfig{},
+			moduleName:     "test-module",
+			expectedConfig: nil,
+		},
+		{
+			name: "module with empty configuration",
+			moduleConfig: map[string]ModuleConfig{
+				"test-module": {
+					Enabled: true,
+					Config:  map[string]any{},
+				},
+			},
+			moduleName:     "test-module",
+			expectedConfig: map[string]any{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := Config{
+				Name:    "test-app",
+				Modules: tt.moduleConfig,
+				HTTP: HTTPConfig{
+					Port: 0,
+				},
+				NATS: NATSConfig{
+					Embedded: true,
+					Private:  true,
+				},
+			}
+
+			app := New(config)
+
+			// Create a test module that captures its init config
+			var capturedConfig map[string]any
+			testModule := &mockModule{
+				name: tt.moduleName,
+				initFunc: func(cfg map[string]any) error {
+					capturedConfig = cfg
+					return nil
+				},
+			}
+
+			if err := app.AddModule(testModule); err != nil {
+				t.Fatalf("Failed to add module: %v", err)
+			}
+
+			if err := app.Start(); err != nil {
+				t.Fatalf("Failed to start app: %v", err)
+			}
+			defer app.Stop()
+
+			// Verify the config passed to the module
+			if tt.expectedConfig == nil {
+				if capturedConfig != nil {
+					t.Errorf("Expected nil config, got %v", capturedConfig)
+				}
+			} else {
+				if capturedConfig == nil {
+					t.Error("Expected config, got nil")
+					return
+				}
+				for key, expectedValue := range tt.expectedConfig {
+					if capturedConfig[key] != expectedValue {
+						t.Errorf("Config key %s: expected %v, got %v", key, expectedValue, capturedConfig[key])
+					}
+				}
+			}
+		})
+	}
+}
