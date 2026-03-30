@@ -1031,6 +1031,14 @@ The current `nats/nats.go` is missing production-readiness features:
 
 Address Gaps 1-4 as a **NATS hardening pass** at the start of Phase 3, before implementing the filter/job modules. This keeps NATS work scoped to the `nats/` package and unblocks all downstream phases.
 
+### Resolution (completed)
+
+All four gaps addressed in `feat/nats-hardening` branch:
+- **Gap 1:** Publisher switched from `nc.Publish()` to `js.Publish()` for delivery confirmation. `app.Msg` and `app.Consumer` interfaces added for modules to consume JetStream messages without importing nats-io.
+- **Gap 2:** `nats/consumers.go` created with ConsumerManager and job-runner consumer definition (AckExplicit, MaxDeliver=5, 30s AckWait). `nats/consumer.go` implements `app.Consumer` via pull subscription.
+- **Gap 3:** JOBS stream added (WorkQueue retention, `jobs.>` subjects). SCHEDULES stream deferred to Phase 4.
+- **Gap 4:** Connection hardening: Drain() instead of Close(), MaxReconnects(-1), ReconnectWait, ReconnectJitter, ConnectTimeout for external connections, handler callbacks for disconnect/reconnect/closed/error.
+
 ---
 
 ## Known Gap: Social Features and Federation
