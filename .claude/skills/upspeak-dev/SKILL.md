@@ -4,7 +4,7 @@ description: Use when working on the Upspeak codebase — implementing features,
 compatibility: Designed for Claude Code. Requires Go 1.25+, SQLite (mattn/go-sqlite3), google/uuid
 metadata:
   author: upspeak
-  version: "0.3"
+  version: "0.4"
 ---
 
 # Upspeak Development
@@ -71,13 +71,16 @@ Modules that only need node operations can accept `core.NodeStore` instead of th
 
 ## NATS Isolation
 
-Only `nats/` imports `github.com/nats-io/*`. Other packages use:
-- `app.Publisher` interface: `Publish(subject, data) error`
-- `app.Subscriber` interface: `Subscribe(subject, handler) error`
+Only `nats/` imports `github.com/nats-io/*`. Other packages use interfaces from `app/`:
+- `app.Publisher`: `Publish(subject, data) error` — JetStream-backed, delivery confirmed
+- `app.Subscriber`: `Subscribe(subject, handler) error` — core NATS fan-out
+- `app.Consumer`: `Fetch(maxMsgs, timeout) ([]*Msg, error)` — JetStream pull consumer with `Msg.Ack()`/`Nak()`
 
 Event subjects: `repo.{repo_id}.events.{EventType}` (e.g., `NodeCreated`, `EdgeDeleted`)
 
-**Known gap:** Current Publisher/Subscriber are minimal (basic pub/sub). JetStream features (durable consumers, ack/nack, work queues) not yet exposed. Will need expanding for Phases 3-6.
+**Streams:** `REPO_{repo_id}_EVENTS` (Limits), `JOBS` (WorkQueue, `jobs.>`), `SCHEDULES` (Phase 4).
+**Consumers:** Durable pull, AckExplicit. `job-runner` on JOBS. Others added per phase.
+**Connection:** Drain() on shutdown, infinite reconnect with jitter, handler callbacks for logging.
 
 ## Module Wiring
 
@@ -101,6 +104,7 @@ Dependencies injected via setters, not constructor or handler params. `HTTPHandl
 | 1. Foundation | Done | UUID v7, NATS isolation, repo CRUD, API envelope |
 | 2. Knowledge Graph | Done | Nodes, edges, threads, annotations, flat URLs |
 | Correction Pass | Done | Archive sub-interfaces, file-based body, signature cleanup |
+| NATS Hardening | Done | JetStream publish, consumers, JOBS stream, connection management |
 | 3. Filters + Jobs | Next | Filter CRUD + engine, job tracking, JOBS stream |
 | 4. Connectors + Schedules | Planned | Sources, sinks, repo connector, cron |
 | 5. Rules + Search | Planned | Rule engine, FTS5, graph traversal (cross-repo) |
@@ -119,4 +123,7 @@ Full spec: `docs/specs/api-foundation/00-index.md` (18 files)
 - **Event types:** `core/events.go`, `core/shared_types.go`
 - **Identity:** `core/identity.go` (NewID, FormatShortID, ParseShortID, prefixes)
 - **Schema:** `archive/schema.go` (SQLite DDL)
+- **NATS bus:** `nats/nats.go` (Bus, connection), `nats/publisher.go`, `nats/subscriber.go`
+- **NATS streams:** `nats/streams.go` (repo events, JOBS)
+- **NATS consumers:** `nats/consumers.go` (manager, definitions), `nats/consumer.go` (app.Consumer impl)
 - **High-level diagram:** `assets/high-level-concepts-0.1.png`

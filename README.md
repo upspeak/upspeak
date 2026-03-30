@@ -60,6 +60,10 @@ go test ./...
 ./build.sh cleanup
 ```
 
+### AI-assisted development
+
+This project includes a project-local Claude skill (`.claude/skills/upspeak-dev/`) that provides architecture context for AI-assisted development. Install the [NATS skill](https://github.com/kaustavdm/nats-skill/) globally for NATS JetStream reference when working on the event bus.
+
 ## License
 
 Upspeak is licensed under the Apache License, Version 2.0 (Apache-2.0). See the [LICENSE](LICENSE) file for the full license text.

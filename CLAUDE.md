@@ -106,26 +106,37 @@ Dependencies (archive, publisher) are injected via setter methods (e.g., `SetArc
 
 ## NATS Communication
 
-All NATS code is isolated in the `nats/` package. Other modules interact via `app.Publisher` and `app.Subscriber` interfaces:
+All NATS code is isolated in the `nats/` package. Other modules interact via interfaces defined in `app/`:
 
 ```go
+// Fire-and-forget publishing (JetStream-backed, delivery confirmed).
 type Publisher interface {
     Publish(subject string, data []byte) error
 }
 
+// Core NATS fan-out subscriptions (push-based).
 type Subscriber interface {
     Subscribe(subject string, handler func(subject string, data []byte)) error
 }
+
+// Work queue consumption (JetStream pull consumer, explicit ack).
+type Consumer interface {
+    Fetch(maxMsgs int, timeout time.Duration) ([]*Msg, error)
+}
 ```
+
+**Publisher** uses `js.Publish()` (not `nc.Publish()`) so the server confirms persistence before returning. **Subscriber** uses core NATS for simple fan-out. **Consumer** wraps a JetStream durable pull subscription with `app.Msg` providing Ack/Nak/InProgress/Term methods.
 
 **Event subject format:** `repo.{repo_id}.events.{EventType}` (e.g., `repo.{uuid}.events.NodeCreated`)
 
 **JetStream streams:**
-- Per-repo: `REPO_{repo_id}_EVENTS` — captures `repo.{repo_id}.events.>`
-- Jobs: `JOBS` — work queue retention (planned, not yet implemented)
-- Schedules: `SCHEDULES` — work queue retention (planned, not yet implemented)
+- Per-repo: `REPO_{repo_id}_EVENTS` — Limits retention, captures `repo.{repo_id}.events.>`
+- Jobs: `JOBS` — WorkQueue retention, captures `jobs.>`
+- Schedules: `SCHEDULES` — WorkQueue retention, captures `schedules.trigger.>` (planned, Phase 4)
 
-**Known gap:** The current Publisher/Subscriber interfaces are minimal (basic pub/sub). JetStream features (durable consumers, ack/nack, pull consumers, work queues) are not yet exposed. This will need addressing before Phases 3-6.
+**Consumers:** Durable pull consumers with explicit ack. `job-runner` on JOBS stream (MaxDeliver=5, AckWait=30s). Additional consumers (rules-engine, scheduler, connector-repo, realtime-ws, sync-outbound) added as phases implement them.
+
+**Connection management:** Drain() on shutdown (not Close()), infinite reconnect with jitter, handler callbacks for disconnect/reconnect/error logging.
 
 ## HTTP API Conventions
 
@@ -190,7 +201,7 @@ Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `
 
 The full API foundation is implemented in 6 phases. See `docs/specs/api-foundation/` for the complete spec and `docs/superpowers/plans/2026-03-30-api-foundation.md` for the implementation plan.
 
-**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass (archive interface alignment)
+**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass (archive interface alignment), NATS hardening pass
 **Next:** Phase 3 (filters + jobs)
 **After Phase 3:** Phases 4 (connectors + schedules), 5 (rules + search), 6 (real-time + sync) can proceed in parallel
 
@@ -201,6 +212,8 @@ The full API foundation is implemented in 6 phases. See `docs/specs/api-foundati
 3. **Module interface has no parameters** — `HTTPHandlers()` and `MsgHandlers()` take no arguments. Dependencies injected via setter methods.
 4. **HTTP method patterns** — Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts.
 5. **Reserved paths** — Never mount modules at `/healthz` or `/readiness` (system endpoints).
-6. **NATS isolation** — Only the `nats/` package imports `github.com/nats-io/*`. All other packages use `app.Publisher`/`app.Subscriber` interfaces.
+6. **NATS isolation** — Only the `nats/` package imports `github.com/nats-io/*`. All other packages use `app.Publisher`/`app.Subscriber`/`app.Consumer` interfaces.
+9. **Use JetStream publish** — The publisher uses `js.Publish()`, not `nc.Publish()`. Never use `nc.Publish()` for subjects captured by JetStream streams.
+10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.
 7. **Short IDs are immutable** — Once assigned, a short ID never changes. Sequences never reuse numbers.
 8. **Batch methods don't take repoID** — Each entity in the batch already has `RepoID` set by the caller.
