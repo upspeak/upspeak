@@ -37,6 +37,53 @@ type Subscriber interface {
 	Subscribe(subject string, handler func(subject string, data []byte)) error
 }
 
+// Msg represents a message received from a durable consumer that requires
+// explicit acknowledgement. Modules use this type to process work queue
+// messages without importing NATS packages directly.
+type Msg struct {
+	Subject string
+	Data    []byte
+	ack     func() error
+	nak     func() error
+	inProg  func() error
+	term    func() error
+}
+
+// NewMsg creates a Msg with the given subject, data, and acknowledgement functions.
+// This is called by infrastructure implementations (e.g. nats), not by modules.
+func NewMsg(subject string, data []byte, ack, nak, inProg, term func() error) *Msg {
+	return &Msg{
+		Subject: subject,
+		Data:    data,
+		ack:     ack,
+		nak:     nak,
+		inProg:  inProg,
+		term:    term,
+	}
+}
+
+// Ack acknowledges the message, removing it from the work queue.
+func (m *Msg) Ack() error { return m.ack() }
+
+// Nak negatively acknowledges the message, requesting redelivery.
+func (m *Msg) Nak() error { return m.nak() }
+
+// InProgress signals the server that the message is still being processed,
+// resetting the ack-wait timer.
+func (m *Msg) InProgress() error { return m.inProg() }
+
+// Term terminates delivery of the message. The server will not redeliver it.
+func (m *Msg) Term() error { return m.term() }
+
+// Consumer is the interface for consuming messages from a durable work queue.
+// Implementations are provided by infrastructure modules (e.g. nats).
+type Consumer interface {
+	// Fetch retrieves up to maxMsgs messages, blocking until at least one is
+	// available or the timeout is reached. Each message must be acknowledged
+	// via Ack() or Nak().
+	Fetch(maxMsgs int, timeout time.Duration) ([]*Msg, error)
+}
+
 // Module is the interface that all application modules must implement.
 type Module interface {
 	Name() string
