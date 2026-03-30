@@ -73,8 +73,8 @@ func (a *LocalArchive) saveEdge(edge *core.Edge) error {
 }
 
 // saveBatchEdges persists multiple edges in a single atomic transaction.
-// All edges must belong to the specified repository.
-func (a *LocalArchive) saveBatchEdges(repoID uuid.UUID, edges []*core.Edge) error {
+// Each edge must have RepoID set by the caller.
+func (a *LocalArchive) saveBatchEdges(edges []*core.Edge) error {
 	if len(edges) == 0 {
 		return nil
 	}
@@ -92,12 +92,11 @@ func (a *LocalArchive) saveBatchEdges(repoID uuid.UUID, edges []*core.Edge) erro
 			return fmt.Errorf("nil edge in batch")
 		}
 
-		seq, err := nextRepoSequence(tx, repoID, "edge")
+		seq, err := nextRepoSequence(tx, edge.RepoID, "edge")
 		if err != nil {
 			return fmt.Errorf("failed to generate edge short ID: %w", err)
 		}
 		edge.ShortID = core.FormatShortID(core.PrefixEdge, seq)
-		edge.RepoID = repoID
 		edge.Version = 1
 		edge.CreatedAt = now
 		edge.UpdatedAt = now
@@ -145,22 +144,22 @@ func (a *LocalArchive) deleteEdge(edgeID uuid.UUID) error {
 }
 
 // listEdges returns paginated edges for a repository with optional source, target, and type filters.
-func (a *LocalArchive) listEdges(repoID uuid.UUID, source, target, edgeType string, opts core.ListOptions) ([]core.Edge, int, error) {
+func (a *LocalArchive) listEdges(repoID uuid.UUID, opts core.EdgeListOptions) ([]core.Edge, int, error) {
 	// Build WHERE clause.
 	where := `WHERE repo_id = ?`
 	args := []any{repoID.String()}
 
-	if source != "" {
+	if opts.Source != "" {
 		where += ` AND source = ?`
-		args = append(args, source)
+		args = append(args, opts.Source)
 	}
-	if target != "" {
+	if opts.Target != "" {
 		where += ` AND target = ?`
-		args = append(args, target)
+		args = append(args, opts.Target)
 	}
-	if edgeType != "" {
+	if opts.Type != "" {
 		where += ` AND type = ?`
-		args = append(args, edgeType)
+		args = append(args, opts.Type)
 	}
 
 	// Count total.
