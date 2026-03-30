@@ -977,3 +977,88 @@ The high-level concepts diagram (`assets/high-level-concepts-0.1.png`) shows Gra
 - `GraphResult` already contains nodes and edges from potentially multiple repos (each carries `RepoID`)
 
 This does not require structural changes to the Phase 5 plan — the existing `GraphOptions` type can be extended with a `RepoIDs []uuid.UUID` field when Phase 5 is implemented.
+
+---
+
+## Known Gap: NATS/JetStream Implementation vs Spec
+
+The current `nats/` package implements the minimum needed for Phases 1-2. The spec (`docs/specs/api-foundation/18-event-bus-adapter.md`) requires more before Phases 3-6 can proceed. This section documents the gaps.
+
+### Gap 1: Publisher/Subscriber interfaces are too minimal
+
+The `app.Publisher` and `app.Subscriber` interfaces only support basic pub/sub. The spec (doc 18) says "exposes NATS-typed APIs to other modules" and "no abstraction layer", but the implementation creates an abstraction that hides JetStream features.
+
+**What Phases 3-6 need:**
+- **JetStream publish** with delivery confirmation (not basic `nats.Publish`)
+- **Durable consumers** for rules-engine, job-runner, scheduler, sync-outbound
+- **Ack/Nack semantics** for work queues (jobs, schedules)
+- **Pull consumers** for job-runner and scheduler (work queue pattern)
+
+**Resolution:** Before Phase 3, expand the `nats/` package to expose JetStream-aware APIs. The `app.Publisher`/`app.Subscriber` interfaces may need to be extended or replaced with richer types that other modules receive via DI. The key constraint is maintaining NATS isolation — only `nats/` imports nats-io.
+
+### Gap 2: Missing consumers.go
+
+The spec (doc 18) defines `nats/consumers.go` for creating named JetStream consumers:
+- `rules-engine` — evaluates rules per repo
+- `connector-repo` — repo-to-repo subscriptions
+- `realtime-ws` — WebSocket fan-out
+- `sync-outbound` — sync replication queue
+- `job-runner` — async job execution (work queue)
+- `scheduler` — cron trigger execution (work queue)
+
+None of these exist. **Required before:** Phase 3 (job-runner), Phase 4 (scheduler, connector-repo), Phase 5 (rules-engine), Phase 6 (realtime-ws, sync-outbound).
+
+### Gap 3: Missing JOBS and SCHEDULES streams
+
+The spec (doc 16) defines three JetStream streams. Only one is implemented:
+- `REPO_{repo_id}_EVENTS` — implemented in `nats/streams.go`
+- `JOBS` (WorkQueue retention, `jobs.>` subjects) — **not implemented**
+- `SCHEDULES` (WorkQueue retention, `schedules.trigger.>` subjects) — **not implemented**
+
+**Required before:** Phase 3 (JOBS stream), Phase 4 (SCHEDULES stream).
+
+### Gap 4: Connection management best practices
+
+The current `nats/nats.go` is missing production-readiness features:
+- No reconnection handlers (`nats.MaxReconnects`, `nats.ReconnectWait`)
+- No error/disconnect/reconnect handler callbacks for logging
+- Uses `Close()` instead of `Drain()` for graceful shutdown
+- External connections have no timeout (`nats.ConnectWait`)
+
+**When to fix:** Should be addressed alongside Gap 1, before Phase 3.
+
+### Recommended approach
+
+Address Gaps 1-4 as a **NATS hardening pass** at the start of Phase 3, before implementing the filter/job modules. This keeps NATS work scoped to the `nats/` package and unblocks all downstream phases.
+
+---
+
+## Known Gap: Social Features and Federation
+
+The high-level concepts diagram and spec vision describe Upspeak as "personal-first, federated knowledge infrastructure". The 6-phase plan delivers the personal-first foundation but defers social and federation features. This section documents what exists and what's missing.
+
+### What IS captured in the plan
+
+- **Multi-device sync** (Phase 6): Full sync system for one user across multiple devices — version-based conflict detection, incremental exchange, peer management
+- **Repo connector** (Phase 4): One repo can subscribe to another as a source/sink with filters — enables repo-to-repo knowledge pipelines on the same instance
+- **Thread publishing** (Phase 2): Thread publish endpoint with visibility parameter (`public|network|private`) and `allow_follow` flag — the API surface exists
+- **Sinks for external publishing** (Phase 4): Publish to Fediverse, RSS, email, Matrix, webhooks
+- **User model** (core/core.go): `User` struct with `Hostname` field (federation hint), `CreatedBy` on entities
+
+### What is NOT captured — deferred beyond Phase 6
+
+- **Federation protocol**: The `upspeak` connector type is listed in the spec but has zero implementation detail — no config payload, no handshake, no discovery
+- **Access control & permissions**: No shared repo ownership, no role-based access, no invite/grant system, no 403 enforcement
+- **Social graph features**: No follow-user API, no subscribe-to-stream, no social discovery feed
+- **Content discovery across users**: No global search, no trending content, no network-wide feed
+- **Visibility enforcement**: The thread publish visibility parameter has no backend semantics — no filtering, no access checks
+- **Federated identity**: The `User.Hostname` field exists but has no resolution mechanism
+
+### Impact on current phases
+
+These gaps do NOT block Phases 3-6. The architecture is being built so that federation and social features can be added as **Phase 7+** without breaking existing APIs:
+- `OwnerID` on repositories enables future multi-tenant queries
+- `CreatedBy` on entities enables future attribution
+- Repo connector is the foundation for cross-instance subscriptions
+- JetStream event streams can be replicated to peers
+- The sync system's peer management is the foundation for federation
