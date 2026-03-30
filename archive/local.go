@@ -12,10 +12,13 @@ import (
 )
 
 // LocalArchive implements the core.Archive interface using local file system storage.
-// Metadata is stored in SQLite, and node content is stored as files.
+// Metadata is stored in SQLite, and node body content is stored as files in the
+// content/ directory. This separation supports the local/remote archive split
+// defined in the high-level architecture.
 type LocalArchive struct {
-	path string
-	db   *sql.DB
+	path       string
+	contentDir string
+	db         *sql.DB
 }
 
 // NewLocalArchive creates a new LocalArchive at the specified path.
@@ -29,13 +32,18 @@ func NewLocalArchive(path string) (*LocalArchive, error) {
 		return nil, fmt.Errorf("failed to create .upspeak directory: %w", err)
 	}
 
+	contentDir := filepath.Join(path, "content")
+	if err := os.MkdirAll(contentDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create content directory: %w", err)
+	}
+
 	dbPath := filepath.Join(upspeakDir, "metadata.db")
 	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	archive := &LocalArchive{path: path, db: db}
+	archive := &LocalArchive{path: path, contentDir: contentDir, db: db}
 
 	if err := archive.initSchema(); err != nil {
 		db.Close()
@@ -56,7 +64,12 @@ func (a *LocalArchive) Close() error {
 	return a.db.Close()
 }
 
-// --- core.Archive interface implementation ---
+// contentPath returns the filesystem path for a node's body content.
+func (a *LocalArchive) contentPath(nodeID uuid.UUID) string {
+	return filepath.Join(a.contentDir, nodeID.String())
+}
+
+// --- core.RepositoryStore implementation ---
 
 func (a *LocalArchive) SaveRepository(repo *core.Repository) error {
 	return a.saveRepository(repo)
@@ -90,28 +103,14 @@ func (a *LocalArchive) ResolveRepoRef(ownerID uuid.UUID, ref string) (*core.Repo
 	return a.resolveRepoRef(ownerID, ref)
 }
 
-// Sequence interface methods.
-
-func (a *LocalArchive) NextRepoSequence(repoID uuid.UUID, entity string) (int, error) {
-	return nextRepoSequence(a.db, repoID, entity)
-}
-
-func (a *LocalArchive) NextUserSequence(ownerID uuid.UUID, entity string) (int, error) {
-	return nextUserSequence(a.db, ownerID, entity)
-}
-
-func (a *LocalArchive) NextGlobalSequence(entity string) (int, error) {
-	return nextGlobalSequence(a.db, entity)
-}
-
-// --- Node operations ---
+// --- core.NodeStore implementation ---
 
 func (a *LocalArchive) SaveNode(node *core.Node) error {
 	return a.saveNode(node)
 }
 
-func (a *LocalArchive) SaveBatchNodes(repoID uuid.UUID, nodes []*core.Node) error {
-	return a.saveBatchNodes(repoID, nodes)
+func (a *LocalArchive) SaveBatchNodes(nodes []*core.Node) error {
+	return a.saveBatchNodes(nodes)
 }
 
 func (a *LocalArchive) GetNode(nodeID uuid.UUID) (*core.Node, error) {
@@ -122,8 +121,8 @@ func (a *LocalArchive) DeleteNode(nodeID uuid.UUID) error {
 	return a.deleteNode(nodeID)
 }
 
-func (a *LocalArchive) ListNodes(repoID uuid.UUID, nodeType string, opts core.ListOptions) ([]core.Node, int, error) {
-	return a.listNodes(repoID, nodeType, opts)
+func (a *LocalArchive) ListNodes(repoID uuid.UUID, opts core.NodeListOptions) ([]core.Node, int, error) {
+	return a.listNodes(repoID, opts)
 }
 
 func (a *LocalArchive) GetNodeEdges(nodeID uuid.UUID, opts core.EdgeQueryOptions) ([]core.Edge, int, error) {
@@ -134,14 +133,14 @@ func (a *LocalArchive) GetNodeAnnotations(nodeID uuid.UUID, opts core.Annotation
 	return a.getNodeAnnotations(nodeID, opts)
 }
 
-// --- Edge operations ---
+// --- core.EdgeStore implementation ---
 
 func (a *LocalArchive) SaveEdge(edge *core.Edge) error {
 	return a.saveEdge(edge)
 }
 
-func (a *LocalArchive) SaveBatchEdges(repoID uuid.UUID, edges []*core.Edge) error {
-	return a.saveBatchEdges(repoID, edges)
+func (a *LocalArchive) SaveBatchEdges(edges []*core.Edge) error {
+	return a.saveBatchEdges(edges)
 }
 
 func (a *LocalArchive) GetEdge(edgeID uuid.UUID) (*core.Edge, error) {
@@ -152,11 +151,11 @@ func (a *LocalArchive) DeleteEdge(edgeID uuid.UUID) error {
 	return a.deleteEdge(edgeID)
 }
 
-func (a *LocalArchive) ListEdges(repoID uuid.UUID, source, target, edgeType string, opts core.ListOptions) ([]core.Edge, int, error) {
-	return a.listEdges(repoID, source, target, edgeType, opts)
+func (a *LocalArchive) ListEdges(repoID uuid.UUID, opts core.EdgeListOptions) ([]core.Edge, int, error) {
+	return a.listEdges(repoID, opts)
 }
 
-// --- Thread operations ---
+// --- core.ThreadStore implementation ---
 
 func (a *LocalArchive) SaveThread(thread *core.Thread) error {
 	return a.saveThread(thread)
@@ -182,7 +181,7 @@ func (a *LocalArchive) RemoveNodeFromThread(threadID, nodeID uuid.UUID) error {
 	return a.removeNodeFromThread(threadID, nodeID)
 }
 
-// --- Annotation operations ---
+// --- core.AnnotationStore implementation ---
 
 func (a *LocalArchive) SaveAnnotation(annotation *core.Annotation) error {
 	return a.saveAnnotation(annotation)
@@ -200,7 +199,7 @@ func (a *LocalArchive) ListAnnotations(repoID uuid.UUID, opts core.ListOptions) 
 	return a.listAnnotations(repoID, opts)
 }
 
-// --- Entity ref resolution ---
+// --- core.RefResolver implementation ---
 
 func (a *LocalArchive) ResolveRef(repoID uuid.UUID, ref string) (uuid.UUID, string, error) {
 	return a.resolveRef(repoID, ref)

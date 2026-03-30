@@ -4,13 +4,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/core"
 )
 
-// saveNode persists a node to the database.
+// saveNode persists a node to the database and writes body content to a file.
 // If Version == 0, this is a create (inserts with Version 1 and generates a short ID).
 // If Version > 0, this is an update with optimistic concurrency check.
 func (a *LocalArchive) saveNode(node *core.Node) error {
@@ -37,14 +38,20 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 		node.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, body, metadata, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, node.ID.String(), node.ShortID, node.RepoID.String(), node.Type, node.Subject,
-			node.ContentType, string(node.Body), string(metadataJSON), node.CreatedBy.String(),
+			node.ContentType, string(metadataJSON), node.CreatedBy.String(),
 			node.Version, node.CreatedAt.Format(time.RFC3339), node.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to insert node: %w", err)
 		}
+
+		// Write body content to file.
+		if err := a.writeNodeBody(node.ID, node.Body); err != nil {
+			return fmt.Errorf("failed to write node body: %w", err)
+		}
+
 		return nil
 	}
 
@@ -52,9 +59,9 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 	node.UpdatedAt = now
 	result, err := a.db.Exec(`
 		UPDATE nodes
-		SET type = ?, subject = ?, content_type = ?, body = ?, metadata = ?, version = version + 1, updated_at = ?
+		SET type = ?, subject = ?, content_type = ?, metadata = ?, version = version + 1, updated_at = ?
 		WHERE id = ? AND version = ?
-	`, node.Type, node.Subject, node.ContentType, string(node.Body), string(metadataJSON),
+	`, node.Type, node.Subject, node.ContentType, string(metadataJSON),
 		node.UpdatedAt.Format(time.RFC3339),
 		node.ID.String(), node.Version)
 	if err != nil {
@@ -74,13 +81,19 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 	}
 
 	node.Version++
+
+	// Write body content to file.
+	if err := a.writeNodeBody(node.ID, node.Body); err != nil {
+		return fmt.Errorf("failed to write node body: %w", err)
+	}
+
 	return nil
 }
 
 // saveBatchNodes persists multiple nodes in a single atomic transaction.
-// All nodes must belong to the specified repository. Short IDs are generated
-// for each node within the transaction.
-func (a *LocalArchive) saveBatchNodes(repoID uuid.UUID, nodes []*core.Node) error {
+// Short IDs are generated for each node within the transaction. Body content
+// is written to files after the transaction commits successfully.
+func (a *LocalArchive) saveBatchNodes(nodes []*core.Node) error {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -104,40 +117,63 @@ func (a *LocalArchive) saveBatchNodes(repoID uuid.UUID, nodes []*core.Node) erro
 		}
 
 		// Generate short ID within the transaction to avoid locking conflicts.
-		seq, err := nextRepoSequence(tx, repoID, "node")
+		seq, err := nextRepoSequence(tx, node.RepoID, "node")
 		if err != nil {
 			return fmt.Errorf("failed to generate node short ID: %w", err)
 		}
 		node.ShortID = core.FormatShortID(core.PrefixNode, seq)
-		node.RepoID = repoID
 		node.Version = 1
 		node.CreatedAt = now
 		node.UpdatedAt = now
 
 		_, err = tx.Exec(`
-			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, body, metadata, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, node.ID.String(), node.ShortID, node.RepoID.String(), node.Type, node.Subject,
-			node.ContentType, string(node.Body), string(metadataJSON), node.CreatedBy.String(),
+			node.ContentType, string(metadataJSON), node.CreatedBy.String(),
 			node.Version, node.CreatedAt.Format(time.RFC3339), node.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to insert node in batch: %w", err)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit batch: %w", err)
+	}
+
+	// Write body content files after successful commit.
+	for _, node := range nodes {
+		if err := a.writeNodeBody(node.ID, node.Body); err != nil {
+			return fmt.Errorf("failed to write node body for %s: %w", node.ID, err)
+		}
+	}
+
+	return nil
 }
 
-// getNode retrieves a node by UUID.
+// getNode retrieves a node by UUID, including body content from file.
 func (a *LocalArchive) getNode(nodeID uuid.UUID) (*core.Node, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, type, subject, content_type, body, metadata, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at
 		FROM nodes WHERE id = ?
 	`, nodeID.String())
-	return scanNodeFromSingleRow(row)
+
+	node, err := scanNodeFromSingleRow(row)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read body content from file.
+	body, err := a.readNodeBody(nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read node body: %w", err)
+	}
+	node.Body = body
+
+	return node, nil
 }
 
-// deleteNode deletes a node by UUID.
+// deleteNode deletes a node by UUID, including its body content file.
 func (a *LocalArchive) deleteNode(nodeID uuid.UUID) error {
 	result, err := a.db.Exec(`DELETE FROM nodes WHERE id = ?`, nodeID.String())
 	if err != nil {
@@ -152,17 +188,21 @@ func (a *LocalArchive) deleteNode(nodeID uuid.UUID) error {
 		return core.NewErrorNotFound("node", nodeID.String())
 	}
 
+	// Remove body content file (ignore error if file doesn't exist).
+	_ = os.Remove(a.contentPath(nodeID))
+
 	return nil
 }
 
 // listNodes returns paginated nodes for a repository, optionally filtered by type.
-func (a *LocalArchive) listNodes(repoID uuid.UUID, nodeType string, opts core.ListOptions) ([]core.Node, int, error) {
+// Body content is NOT loaded for list operations (use GetNode for full content).
+func (a *LocalArchive) listNodes(repoID uuid.UUID, opts core.NodeListOptions) ([]core.Node, int, error) {
 	// Build WHERE clause.
 	where := `WHERE repo_id = ?`
 	args := []any{repoID.String()}
-	if nodeType != "" {
+	if opts.Type != "" {
 		where += ` AND type = ?`
-		args = append(args, nodeType)
+		args = append(args, opts.Type)
 	}
 
 	// Count total.
@@ -185,7 +225,7 @@ func (a *LocalArchive) listNodes(repoID uuid.UUID, nodeType string, opts core.Li
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, subject, content_type, body, metadata, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at
 		 FROM nodes %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -336,14 +376,47 @@ func (a *LocalArchive) getNodeAnnotations(nodeID uuid.UUID, opts core.Annotation
 	return annotations, total, nil
 }
 
+// writeNodeBody writes node body content to a file. If body is nil or empty,
+// the content file is removed (if it exists).
+func (a *LocalArchive) writeNodeBody(nodeID uuid.UUID, body json.RawMessage) error {
+	path := a.contentPath(nodeID)
+
+	if len(body) == 0 || string(body) == "null" {
+		// Remove content file if body is empty.
+		err := os.Remove(path)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove content file: %w", err)
+		}
+		return nil
+	}
+
+	return os.WriteFile(path, []byte(body), 0644)
+}
+
+// readNodeBody reads node body content from a file. Returns nil if no content file exists.
+func (a *LocalArchive) readNodeBody(nodeID uuid.UUID) (json.RawMessage, error) {
+	path := a.contentPath(nodeID)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read content file: %w", err)
+	}
+
+	return json.RawMessage(data), nil
+}
+
 // scanNodeFromSingleRow scans a node from a *sql.Row (single-row query).
+// Does NOT load body content — caller must read from file separately.
 func scanNodeFromSingleRow(row *sql.Row) (*core.Node, error) {
 	var node core.Node
 	var idStr, repoIDStr, createdByStr, createdAt, updatedAt string
-	var bodyStr, metadataStr sql.NullString
+	var metadataStr sql.NullString
 
 	err := row.Scan(&idStr, &node.ShortID, &repoIDStr, &node.Type, &node.Subject,
-		&node.ContentType, &bodyStr, &metadataStr, &createdByStr,
+		&node.ContentType, &metadataStr, &createdByStr,
 		&node.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("node", "")
@@ -352,27 +425,28 @@ func scanNodeFromSingleRow(row *sql.Row) (*core.Node, error) {
 		return nil, fmt.Errorf("failed to scan node: %w", err)
 	}
 
-	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, bodyStr, metadataStr, createdAt, updatedAt)
+	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, createdAt, updatedAt)
 }
 
 // scanNodeFromRow scans a node from a *sql.Rows iterator.
+// Does NOT load body content — caller must read from file separately.
 func scanNodeFromRow(rows *sql.Rows) (*core.Node, error) {
 	var node core.Node
 	var idStr, repoIDStr, createdByStr, createdAt, updatedAt string
-	var bodyStr, metadataStr sql.NullString
+	var metadataStr sql.NullString
 
 	err := rows.Scan(&idStr, &node.ShortID, &repoIDStr, &node.Type, &node.Subject,
-		&node.ContentType, &bodyStr, &metadataStr, &createdByStr,
+		&node.ContentType, &metadataStr, &createdByStr,
 		&node.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan node row: %w", err)
 	}
 
-	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, bodyStr, metadataStr, createdAt, updatedAt)
+	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, createdAt, updatedAt)
 }
 
 // parseNodeFields populates a Node's parsed fields from raw scanned strings.
-func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, bodyStr, metadataStr sql.NullString, createdAt, updatedAt string) (*core.Node, error) {
+func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, metadataStr sql.NullString, createdAt, updatedAt string) (*core.Node, error) {
 	var err error
 
 	node.ID, err = uuid.Parse(idStr)
@@ -386,10 +460,6 @@ func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, bod
 	node.CreatedBy, err = uuid.Parse(createdByStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse node created_by: %w", err)
-	}
-
-	if bodyStr.Valid {
-		node.Body = json.RawMessage(bodyStr.String)
 	}
 
 	if metadataStr.Valid && metadataStr.String != "" {

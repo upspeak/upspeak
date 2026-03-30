@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS repositories (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repositories_owner_slug ON repositories(owner_id, slug);
 
--- Nodes.
+-- Nodes. Body content is stored as files in the content/ directory,
+-- not in SQLite. This supports the local/remote archive split where
+-- local stores files on disk and remote stores in object storage.
 CREATE TABLE IF NOT EXISTS nodes (
 	id           TEXT PRIMARY KEY,
 	short_id     TEXT NOT NULL,
@@ -24,7 +26,6 @@ CREATE TABLE IF NOT EXISTS nodes (
 	type         TEXT NOT NULL,
 	subject      TEXT NOT NULL,
 	content_type TEXT NOT NULL,
-	body         TEXT,
 	metadata     TEXT,
 	created_by   TEXT NOT NULL,
 	version      INTEGER NOT NULL DEFAULT 1,
