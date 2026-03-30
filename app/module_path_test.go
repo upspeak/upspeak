@@ -71,16 +71,15 @@ func TestAddModuleOnPath(t *testing.T) {
 			errContains: "already mounted at root",
 		},
 		{
-			name: "two modules at same path - should fail",
+			name: "multiple modules at same non-root path - should succeed",
 			modules: []struct {
 				module Module
 				path   string
 			}{
-				{newMockModule("api"), "/api"},
-				{newMockModule("api2"), "/api"},
+				{newMockModule("api"), "/api/v1"},
+				{newMockModule("api2"), "/api/v1"},
 			},
-			wantErr:     true,
-			errContains: "path conflict",
+			wantErr: false,
 		},
 		{
 			name: "path normalization - no leading slash",
@@ -164,10 +163,7 @@ func TestAddModuleOnPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := New(Config{
 				Name: "test-app",
-				NATS: NATSConfig{
-					Embedded: true,
-					Private:  true,
-				},
+				NATS: NATSConfig{Embedded: true, Private: true},
 			})
 
 			var err error
@@ -212,10 +208,7 @@ func TestAddModuleOnPathNormalization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := New(Config{
 				Name: "test-app",
-				NATS: NATSConfig{
-					Embedded: true,
-					Private:  true,
-				},
+				NATS: NATSConfig{Embedded: true, Private: true},
 			})
 
 			module := newMockModule("test")
@@ -233,10 +226,7 @@ func TestAddModuleOnPathNormalization(t *testing.T) {
 func TestAddModuleUsesAddModuleOnPath(t *testing.T) {
 	app := New(Config{
 		Name: "test-app",
-		NATS: NATSConfig{
-			Embedded: true,
-			Private:  true,
-		},
+		NATS: NATSConfig{Embedded: true, Private: true},
 	})
 
 	module := newMockModule("writer")
@@ -244,7 +234,6 @@ func TestAddModuleUsesAddModuleOnPath(t *testing.T) {
 		t.Fatalf("Failed to add module: %v", err)
 	}
 
-	// AddModule should use module name as path
 	if app.modules["writer"].path != "/writer" {
 		t.Errorf("Expected path /writer, got %s", app.modules["writer"].path)
 	}
@@ -253,13 +242,9 @@ func TestAddModuleUsesAddModuleOnPath(t *testing.T) {
 func TestRootModuleTracking(t *testing.T) {
 	app := New(Config{
 		Name: "test-app",
-		NATS: NATSConfig{
-			Embedded: true,
-			Private:  true,
-		},
+		NATS: NATSConfig{Embedded: true, Private: true},
 	})
 
-	// Add a root module
 	uiModule := newMockModule("ui")
 	if err := app.AddModuleOnPath(uiModule, ""); err != nil {
 		t.Fatalf("Failed to add UI module: %v", err)
@@ -269,7 +254,6 @@ func TestRootModuleTracking(t *testing.T) {
 		t.Errorf("Expected rootModule to be 'ui', got '%s'", app.rootModule)
 	}
 
-	// Try to add another root module - should fail
 	adminModule := newMockModule("admin")
 	err := app.AddModuleOnPath(adminModule, "")
 	if err == nil {
@@ -308,13 +292,9 @@ func TestBuildHandlerPath(t *testing.T) {
 func TestModuleRegistrationOrder(t *testing.T) {
 	app := New(Config{
 		Name: "test-app",
-		NATS: NATSConfig{
-			Embedded: true,
-			Private:  true,
-		},
+		NATS: NATSConfig{Embedded: true, Private: true},
 	})
 
-	// Add modules in specific order: root, then namespaced
 	uiModule := newMockModule("ui")
 	uiModule.addHTTPHandler("GET", "/home", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("UI"))
@@ -325,7 +305,6 @@ func TestModuleRegistrationOrder(t *testing.T) {
 		w.Write([]byte("API"))
 	})
 
-	// Add in order: API first, then UI at root
 	if err := app.AddModuleOnPath(apiModule, "/api"); err != nil {
 		t.Fatalf("Failed to add API module: %v", err)
 	}
@@ -334,13 +313,11 @@ func TestModuleRegistrationOrder(t *testing.T) {
 		t.Fatalf("Failed to add UI module: %v", err)
 	}
 
-	// Start should register non-root modules first, then root
 	if err := app.Start(); err != nil {
 		t.Fatalf("Failed to start app: %v", err)
 	}
 	defer app.Stop()
 
-	// Verify both are registered
 	if len(app.modules) != 2 {
 		t.Errorf("Expected 2 modules, got %d", len(app.modules))
 	}

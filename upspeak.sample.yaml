@@ -13,10 +13,3 @@ modules:
       path: "./data"
   repo:
     enabled: true
-    config:
-      repo_id: ""  # Auto-generated if not specified
-      repo_name: "default"
-  writer:
-    enabled: true
-    config:
-      key: "value"

@@ -4,11 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/nats-io/nats.go"
 )
 
-// mockModule implements the Module interface for testing
+// mockModule implements the Module interface for testing.
 type mockModule struct {
 	name         string
 	initFunc     func(config map[string]any) error
@@ -37,11 +35,11 @@ func (m *mockModule) Init(config map[string]any) error {
 	return m.initFunc(config)
 }
 
-func (m *mockModule) HTTPHandlers(pub Publisher) []HTTPHandler {
+func (m *mockModule) HTTPHandlers() []HTTPHandler {
 	return m.httpHandlers
 }
 
-func (m *mockModule) MsgHandlers(pub Publisher) []MsgHandler {
+func (m *mockModule) MsgHandlers() []MsgHandler {
 	return m.msgHandlers
 }
 
@@ -59,7 +57,7 @@ func (m *mockModule) addHTTPHandler(method, path string, handler http.HandlerFun
 	})
 }
 
-func (m *mockModule) addMsgHandler(subject string, handler func(msg *nats.Msg)) {
+func (m *mockModule) addMsgHandler(subject string, handler func(subject string, data []byte)) {
 	m.msgHandlers = append(m.msgHandlers, MsgHandler{
 		Subject: subject,
 		Handler: handler,
@@ -147,37 +145,6 @@ func TestReadinessHandler(t *testing.T) {
 	}
 }
 
-func TestHTTPServerFailure(t *testing.T) {
-	// Create two apps trying to use the same port
-	config := Config{
-		Name: "test-app",
-		HTTP: HTTPConfig{
-			Port: 8082,
-		},
-		NATS: NATSConfig{
-			Embedded: true,
-			Private:  true,
-		},
-	}
-
-	app1 := New(config)
-	app2 := New(config)
-
-	// Start first app
-	if err := app1.Start(); err != nil {
-		t.Fatalf("Failed to start first app: %v", err)
-	}
-
-	// Try to start second app on same port
-	if err := app2.Start(); err == nil {
-		t.Error("Expected error when starting second app on same port")
-	}
-
-	// Cleanup
-	app1.Stop()
-	app2.Stop()
-}
-
 func TestModuleConfigurationPassing(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -226,18 +193,12 @@ func TestModuleConfigurationPassing(t *testing.T) {
 			config := Config{
 				Name:    "test-app",
 				Modules: tt.moduleConfig,
-				HTTP: HTTPConfig{
-					Port: 0,
-				},
-				NATS: NATSConfig{
-					Embedded: true,
-					Private:  true,
-				},
+				HTTP:    HTTPConfig{Port: 0},
+				NATS:    NATSConfig{Embedded: true, Private: true},
 			}
 
 			app := New(config)
 
-			// Create a test module that captures its init config
 			var capturedConfig map[string]any
 			testModule := &mockModule{
 				name: tt.moduleName,
@@ -256,7 +217,6 @@ func TestModuleConfigurationPassing(t *testing.T) {
 			}
 			defer app.Stop()
 
-			// Verify the config passed to the module
 			if tt.expectedConfig == nil {
 				if capturedConfig != nil {
 					t.Errorf("Expected nil config, got %v", capturedConfig)

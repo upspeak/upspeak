@@ -6,61 +6,52 @@ Upspeak is a personal knowledge management system and information client designe
 ![Not Production Ready](https://img.shields.io/badge/production%20ready-no-red)
 [![Build and Test](https://github.com/upspeak/upspeak/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/upspeak/upspeak/actions/workflows/build-and-test.yml)
 
-## Introduction
+## Overview
 
-Upspeak will let you build personal knowledge repositories into queryable information archives. These repositories can include local data (notes you write) as well as gather data from any system accessible over HTTP, allowing you to annotate the data and send replies back within their contexts.
+Upspeak is an **API-first** knowledge infrastructure. It provides a structured knowledge graph for collecting, organising, and querying information from diverse sources. Clients (web, mobile, CLI, AI agents) connect over the HTTP API.
 
-Upspeak will integrate with tools you already use to consume or create information in multiple shared contexts, such as Matrix, Discourse, and the Fediverse.
+**Key features:**
+- Knowledge graph with nodes, edges, threads, and annotations
+- UUID v7 identifiers with human-friendly short IDs (`NODE-42`, `REPO-1`)
+- Event-driven architecture with embedded NATS/JetStream
+- Reusable filters, connectors, schedules, and rules
+- Multi-device sync with conflict resolution
+- Local-first: offline writes succeed immediately, sync when reconnected
 
-## High Level Concepts
+## Architecture
 
-![High level concepts for Upspeak 0.1](./assets/high-level-concepts-0.1.png)
+Upspeak uses a **hybrid synchronous core + JetStream** architecture:
+- Writes go synchronously to SQLite (confirmed to the client)
+- JetStream carries the downstream consequences (events, sync, background processing)
 
-1. **Repository**: The core component where all data will be collected, organised, and managed. It will interface with both local and remote Archives.
-2. **Archives**: Data sinks that can be local (on the user's device) or remote (web sources accessible over HTTP).
-3. **Nodes and Edges**: Fundamental elements within the Repository. Nodes will represent data points, while Edges will define relationships between these points, forming a structured graph.
-4. **Annotation**: Users will be able to annotate data within the Repository, linking and contextualising information to enrich their knowledge graph.
-5. **Integration with External Tools**: Upspeak will integrate with tools like Matrix, Discourse, and the Fediverse, enabling seamless data flow and interaction in shared contexts.
+See `docs/specs/api-foundation/` for the complete API specification.
 
 ## Develop
 
-Upspeak uses a modular architecture where modules are composed into a single binary. Use `build.sh` to build and run the application.
-
-### Build Commands
-
 ```bash
-# Full build (modules + binary)
+# Build the binary
 ./build.sh build
 
-# Build ui module only
-./build.sh build-ui
+# Development mode (requires upspeak.yaml)
+cp upspeak.sample.yaml upspeak.yaml
+./build.sh dev
 
-# Build binary only (uses existing module builds)
-./build.sh build-app
+# Run tests
+go test ./...
 
 # Clean build artifacts
 ./build.sh cleanup
-
-# Development mode (requires upspeak.yaml)
-./build.sh dev
-
-# Show help
-./build.sh help
 ```
 
-### Development Workflow
+## Project Structure
 
-```bash
-# First time setup
-cp upspeak.sample.yaml upspeak.yaml
-# Edit upspeak.yaml with your configuration
-
-# Run application
-./build.sh dev
-
-# For ui module development with hot reload
-cd ui/web && npm run dev
-# Access at http://localhost:5173
+```
+app/        — Application micro-framework (HTTP routing, module lifecycle)
+api/        — API response envelope and HTTP helpers
+core/       — Domain models and interfaces
+archive/    — SQLite storage implementation
+repo/       — Repository CRUD API module
+nats/       — NATS/JetStream infrastructure (isolated from other packages)
 ```
 
 ## License

@@ -1,8 +1,24 @@
 package core
 
-// Thread is an aggregate; a composite Node using Edges for relationships.
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Thread is a composite entity representing an ordered collection of nodes
+// linked by edges. The Thread itself has a first-class identity (ID, ShortID)
+// distinct from its root Node. The root Node is the initial content of the
+// thread; additional nodes are attached via AddNodeToThread/RemoveNodeFromThread.
 type Thread struct {
-	Node     Node       `json:"node"`     // A Node is the aggregate root of the thread
-	Edges    []Edge     `json:"edges"`    // List of Edges representing relations between nodes in the thread
-	Metadata []Metadata `json:"metadata"` // Additional custom metadata for the thread
+	ID        uuid.UUID  `json:"id"`
+	ShortID   string     `json:"short_id"`
+	RepoID    uuid.UUID  `json:"repo_id"`
+	Node      Node       `json:"node"`
+	Edges     []Edge     `json:"edges"`
+	Metadata  []Metadata `json:"metadata"`
+	CreatedBy uuid.UUID  `json:"created_by"`
+	Version   int        `json:"version"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

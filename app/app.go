@@ -9,51 +9,53 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	natsserver "github.com/nats-io/nats-server/v2/server"
-	"github.com/nats-io/nats.go"
 )
 
+// HTTPHandler defines an HTTP route handler for a module.
 type HTTPHandler struct {
 	Method  string
 	Path    string
 	Handler http.HandlerFunc
 }
 
+// MsgHandler defines a message subscription handler.
+// The handler function receives the subject and raw message data.
 type MsgHandler struct {
 	Subject string
-	Handler func(msg *nats.Msg)
+	Handler func(subject string, data []byte)
 }
 
-type Publisher struct {
-	nc *nats.Conn
+// Publisher is the interface for publishing messages to the event bus.
+// Implementations are provided by infrastructure modules (e.g. nats).
+type Publisher interface {
+	Publish(subject string, data []byte) error
 }
 
-func (p *Publisher) Publish(subject string, data []byte) error {
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	return p.nc.PublishMsg(msg)
+// Subscriber is the interface for subscribing to messages from the event bus.
+// Implementations are provided by infrastructure modules (e.g. nats).
+type Subscriber interface {
+	Subscribe(subject string, handler func(subject string, data []byte)) error
 }
 
+// Module is the interface that all application modules must implement.
 type Module interface {
 	Name() string
 	Init(config map[string]any) error
-	HTTPHandlers(pub Publisher) []HTTPHandler
-	MsgHandlers(pub Publisher) []MsgHandler
+	HTTPHandlers() []HTTPHandler
+	MsgHandlers() []MsgHandler
 }
 
-// moduleMount represents a module and its mount path
+// moduleMount represents a module and its mount path.
 type moduleMount struct {
 	module Module
-	path   string // Normalized mount path ("" for root, "/api", "/writer", etc.)
+	path   string // Normalised mount path ("" for root, "/api/v1", etc.)
 }
 
+// App is the main application container that manages modules, HTTP routing,
+// and the application lifecycle.
 type App struct {
 	config     Config
-	nc         *nats.Conn
-	ns         *natsserver.Server
+	subscriber Subscriber
 	httpServer *http.Server
 	httpRouter *http.ServeMux
 	modules    map[string]moduleMount // Module name -> moduleMount
@@ -63,7 +65,7 @@ type App struct {
 	readyLock  sync.RWMutex
 }
 
-// Create a new App instance from a given Config
+// New creates a new App instance from a given Config.
 func New(config Config) *App {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	return &App{
@@ -74,28 +76,25 @@ func New(config Config) *App {
 	}
 }
 
-// normalizePath normalizes a mount path for consistent handling
-func normalizePath(path string) string {
-	// Trim whitespace
-	path = strings.TrimSpace(path)
+// SetSubscriber sets the message subscriber used for registering message handlers.
+// This must be called before Start() if any module defines MsgHandlers.
+func (a *App) SetSubscriber(sub Subscriber) {
+	a.subscriber = sub
+}
 
-	// Empty string means root
+// normalizePath normalises a mount path for consistent handling.
+func normalizePath(path string) string {
+	path = strings.TrimSpace(path)
 	if path == "" {
 		return ""
 	}
-
-	// Ensure leading slash
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-
-	// Remove trailing slash (except for root)
-	path = strings.TrimSuffix(path, "/")
-
-	return path
+	return strings.TrimSuffix(path, "/")
 }
 
-// isReservedPath checks if a path conflicts with system endpoints
+// isReservedPath checks if a path conflicts with system endpoints.
 func isReservedPath(path string) bool {
 	reservedPaths := []string{"/healthz", "/readiness"}
 	for _, reserved := range reservedPaths {
@@ -110,38 +109,33 @@ func isReservedPath(path string) bool {
 //
 // Path rules:
 //   - Empty string "" mounts at root (/)
-//   - Leading slash is optional and will be normalized
+//   - Leading slash is optional and will be normalised
 //   - Trailing slashes are removed
 //   - Only one module can be mounted at root
+//   - Multiple modules can share the same non-root path
 //   - Paths cannot conflict with reserved system paths (/healthz, /readiness)
 //
 // Examples:
 //
-//	app.AddModuleOnPath(&ui.Module{}, "")         // Root: /
-//	app.AddModuleOnPath(&api.Module{}, "/api")    // Namespaced: /api/*
-//	app.AddModuleOnPath(&writer.Module{}, "v1")   // Namespaced: /v1/*
+//	app.AddModuleOnPath(&repo.Module{}, "/api/v1")
+//	app.AddModuleOnPath(&filter.Module{}, "/api/v1")  // OK: shared path
 func (a *App) AddModuleOnPath(module Module, path string) error {
 	moduleName := module.Name()
 
-	// Check if module already registered
 	if _, exists := a.modules[moduleName]; exists {
 		return fmt.Errorf("module %s is already registered", moduleName)
 	}
 
-	// Normalize the path
 	normalizedPath := normalizePath(path)
 
-	// Prevent path traversal attempts
 	if strings.Contains(normalizedPath, "..") {
 		return fmt.Errorf("invalid path: path traversal not allowed")
 	}
 
-	// Check for reserved path conflicts
 	if isReservedPath(normalizedPath) {
 		return fmt.Errorf("path %s conflicts with reserved system endpoint", normalizedPath)
 	}
 
-	// Check root mounting restriction
 	if normalizedPath == "" {
 		if a.rootModule != "" {
 			return fmt.Errorf(
@@ -150,16 +144,6 @@ func (a *App) AddModuleOnPath(module Module, path string) error {
 			)
 		}
 		a.rootModule = moduleName
-	}
-
-	// Check for exact path conflicts with other modules
-	for name, mount := range a.modules {
-		if mount.path == normalizedPath {
-			return fmt.Errorf(
-				"path conflict: module %s is already mounted at %s",
-				name, normalizedPath,
-			)
-		}
 	}
 
 	a.logger.Info("Adding module",
@@ -178,55 +162,52 @@ func (a *App) AddModuleOnPath(module Module, path string) error {
 // AddModule registers a module at /<module.Name()>/.
 // This is a convenience wrapper around AddModuleOnPath.
 func (a *App) AddModule(module Module) error {
-	// Use module name as the path
 	return a.AddModuleOnPath(module, module.Name())
 }
 
-// registerModule initializes a module and registers its handlers
-func (a *App) registerModule(name string, mount moduleMount, pub Publisher) error {
+// registerModule initialises a module and registers its handlers.
+func (a *App) registerModule(name string, mount moduleMount) error {
 	module := mount.module
 
-	// Get module configuration from config file
 	modConfig, exists := a.config.Modules[name]
 
-	// If module exists in config but is disabled, skip it
 	if exists && !modConfig.Enabled {
 		a.logger.Warn("Skipping disabled module", "module", name)
 		return nil
 	}
 
-	a.logger.Info("Initializing module", "module", name)
+	a.logger.Info("Initialising module", "module", name)
 
-	// Initialize module with config (nil if module not in config file)
 	var moduleConfig map[string]any
 	if exists {
 		moduleConfig = modConfig.Config
 	}
 
 	if err := module.Init(moduleConfig); err != nil {
-		a.logger.Error("Failed to initialize module", "module", name, "error", err)
+		a.logger.Error("Failed to initialise module", "module", name, "error", err)
 		return err
 	}
 
-	// Register NATS subscribers
-	for _, handler := range module.MsgHandlers(pub) {
-		a.logger.Info("Subscribing to NATS subject",
-			"subject", handler.Subject,
-			"module", name)
-		if _, err := a.nc.Subscribe(handler.Subject, handler.Handler); err != nil {
-			return fmt.Errorf("failed to subscribe to %s: %w", handler.Subject, err)
+	// Register message handlers via subscriber.
+	if a.subscriber != nil {
+		for _, handler := range module.MsgHandlers() {
+			a.logger.Info("Subscribing to subject",
+				"subject", handler.Subject,
+				"module", name)
+			if err := a.subscriber.Subscribe(handler.Subject, handler.Handler); err != nil {
+				return fmt.Errorf("failed to subscribe to %s: %w", handler.Subject, err)
+			}
 		}
 	}
 
-	// Register HTTP handlers
-	for _, handler := range module.HTTPHandlers(pub) {
+	// Register HTTP handlers.
+	for _, handler := range module.HTTPHandlers() {
 		fullPath := a.buildHandlerPath(mount.path, handler.Path)
 		a.logger.Info("Registering HTTP handler",
 			"path", fullPath,
 			"module", name,
 			"method", handler.Method)
 
-		// Register handler with method pattern
 		pattern := handler.Method + " " + fullPath
 		a.httpRouter.HandleFunc(pattern, handler.Handler)
 	}
@@ -234,53 +215,42 @@ func (a *App) registerModule(name string, mount moduleMount, pub Publisher) erro
 	return nil
 }
 
-// buildHandlerPath constructs the full path for a handler based on the module's mount path
+// buildHandlerPath constructs the full path for a handler based on the module's mount path.
 func (a *App) buildHandlerPath(mountPath, handlerPath string) string {
 	if mountPath == "" {
-		// Root mounting: use handler path as-is
 		return handlerPath
 	}
-
-	// Namespaced mounting: concatenate mount path + handler path
 	return mountPath + handlerPath
 }
 
+// Start bootstraps all modules and starts the HTTP server.
 func (a *App) Start() error {
 	a.logger.Info("Starting app", "name", a.config.Name)
 
-	// 1 - Start NATS and/or initiate NATS connection
-	a.logger.Info("Setting up NATS", "embedded", a.config.NATS.Embedded)
-	if err := a.startNats(); err != nil {
-		return err
-	}
-
-	// 2 - Bootstrap modules
-	pub := Publisher{nc: a.nc}
-
-	// First pass: Register all non-root modules
+	// Register all non-root modules first.
 	for name, mount := range a.modules {
 		if mount.path == "" {
-			continue // Skip root module for now
+			continue
 		}
-		if err := a.registerModule(name, mount, pub); err != nil {
+		if err := a.registerModule(name, mount); err != nil {
 			return err
 		}
 	}
 
-	// Second pass: Register root module last (gives it priority for catch-all routing)
+	// Register root module last (gives it priority for catch-all routing).
 	if a.rootModule != "" {
 		mount := a.modules[a.rootModule]
-		if err := a.registerModule(a.rootModule, mount, pub); err != nil {
+		if err := a.registerModule(a.rootModule, mount); err != nil {
 			return err
 		}
 	}
 
-	// 3 - Register health and readiness endpoints
+	// Register health and readiness endpoints.
 	a.logger.Info("Registering health and readiness endpoints")
 	a.httpRouter.HandleFunc("GET /healthz", a.healthzHandler)
 	a.httpRouter.HandleFunc("GET /readiness", a.readinessHandler)
 
-	// 4 - Start HTTP server
+	// Start HTTP server.
 	serverErr := make(chan error, 1)
 	go func() {
 		a.httpServer = &http.Server{
@@ -295,23 +265,20 @@ func (a *App) Start() error {
 		close(serverErr)
 	}()
 
-	// Wait briefly for any startup errors
+	// Wait briefly for any startup errors.
 	select {
 	case err := <-serverErr:
 		if err != nil {
 			return err
 		}
 	case <-time.After(200 * time.Millisecond):
-		// If no error after 200ms, server likely started successfully
 	}
 
-	// Mark the app as ready
 	a.readyLock.Lock()
 	a.ready = true
 	a.readyLock.Unlock()
 
 	a.logger.Info("App is ready")
-
 	return nil
 }
 
@@ -319,72 +286,18 @@ func (a *App) Start() error {
 func (a *App) Stop() error {
 	a.logger.Info("Stopping app...")
 
-	// Stop HTTP server
 	a.stopHttpServer()
 
-	// Stop NATS
-	a.stopNats()
-
-	// Mark the app as not ready
 	a.readyLock.Lock()
 	a.ready = false
 	a.readyLock.Unlock()
 
-	// Existing shutdown logic...
 	a.logger.Info("App stopped")
-
 	return nil
-}
-
-func (a *App) startNats() error {
-	// Setup and connect to NATS
-	if a.config.NATS.Embedded {
-		// Start NATS server, if using embedded mode
-		ns, err := startEmbeddedNatsServer(a.config.Name, a.config.NATS)
-		a.ns = ns
-		if err != nil {
-			return fmt.Errorf("error starting embedded NATS server: %w", err)
-		}
-		a.logger.Info("Started embedded NATS Server.", "name", a.config.Name)
-		// Connect to the embedded NATS server
-		nc, err := connectToEmbeddedNATS(a.config.Name, ns, a.config.NATS)
-		if err != nil {
-			return fmt.Errorf("error connecting to embedded NATS server: %w", err)
-		}
-		a.logger.Info("Connected to embedded NATS server.", "private", a.config.NATS.Private)
-		a.nc = nc
-	} else {
-		// Connect to NATS server, if using remote mode
-		nc, err := connectToExternalNATS(a.config.NATS)
-		if err != nil {
-			return fmt.Errorf("error connecting to NATS server: %w", err)
-		}
-		a.logger.Info("Connected to external NATS server.", "url", a.config.NATS.URL)
-		a.nc = nc
-	}
-	return nil
-}
-
-func (a *App) stopNats() {
-	a.logger.Info("Stopping NATS...")
-
-	// Close NATS connection
-	if a.nc != nil {
-		a.nc.Close()
-		a.logger.Info("NATS connection closed.")
-	}
-
-	// Close NATS server, if in embedded mode
-	if a.ns != nil {
-		a.ns.Shutdown()
-		a.ns.WaitForShutdown()
-		a.logger.Info("NATS server stopped.")
-	}
 }
 
 func (a *App) stopHttpServer() {
 	a.logger.Info("Stopping HTTP server...")
-	// Shutdown HTTP server
 	if a.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -397,13 +310,13 @@ func (a *App) stopHttpServer() {
 	}
 }
 
-// healthzHandler handles health checks
+// healthzHandler handles health checks.
 func (a *App) healthzHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
 }
 
-// readinessHandler handles readiness probes
+// readinessHandler handles readiness probes.
 func (a *App) readinessHandler(w http.ResponseWriter, r *http.Request) {
 	a.readyLock.RLock()
 	defer a.readyLock.RUnlock()

@@ -1,26 +1,24 @@
 package archive
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 
-	"github.com/nats-io/nats.go"
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
 )
 
 // ModuleArchive implements the app.Module interface for managing archives.
-// It handles persistent storage of domain entities (Nodes, Edges, Threads, Annotations).
+// It handles persistent storage of domain entities.
 type ModuleArchive struct {
-	archive core.Archive
+	archive *LocalArchive
 	logger  *slog.Logger
 }
 
 // Config defines the configuration for the archive module.
 type Config struct {
-	Type string `mapstructure:"type"` // Archive type: "local" or "remote"
+	Type string `mapstructure:"type"` // Archive type: "local"
 	Path string `mapstructure:"path"` // Path for local archive
 }
 
@@ -43,7 +41,6 @@ func (m *ModuleArchive) Init(config map[string]any) error {
 		}
 	}
 
-	// Set defaults
 	if cfg.Type == "" {
 		cfg.Type = "local"
 	}
@@ -51,7 +48,6 @@ func (m *ModuleArchive) Init(config map[string]any) error {
 		cfg.Path = "./data"
 	}
 
-	// Create archive based on type
 	switch cfg.Type {
 	case "local":
 		localArchive, err := NewLocalArchive(cfg.Path)
@@ -69,63 +65,17 @@ func (m *ModuleArchive) Init(config map[string]any) error {
 
 // HTTPHandlers returns the HTTP handlers for the archive module.
 // The archive module doesn't expose HTTP endpoints directly.
-func (m *ModuleArchive) HTTPHandlers(pub app.Publisher) []app.HTTPHandler {
+func (m *ModuleArchive) HTTPHandlers() []app.HTTPHandler {
 	return []app.HTTPHandler{}
 }
 
-// MsgHandlers returns the NATS message handlers for the archive module.
-// The archive module listens for NodeDeleted events to clean up related edges.
-func (m *ModuleArchive) MsgHandlers(pub app.Publisher) []app.MsgHandler {
-	return []app.MsgHandler{
-		{
-			Subject: "repos.*.out",
-			Handler: m.handleRepositoryEvents,
-		},
-	}
+// MsgHandlers returns the message handlers for the archive module.
+// Cascade deletion handlers will be added in Phase 2.
+func (m *ModuleArchive) MsgHandlers() []app.MsgHandler {
+	return []app.MsgHandler{}
 }
 
-// GetArchive returns the archive instance managed by this module.
-// This is used to inject the archive into repositories.
+// GetArchive returns the archive instance as a core.Archive interface.
 func (m *ModuleArchive) GetArchive() core.Archive {
 	return m.archive
-}
-
-// handleRepositoryEvents processes events from repositories to maintain data integrity.
-// Currently handles NodeDeleted events to cascade delete related edges.
-func (m *ModuleArchive) handleRepositoryEvents(msg *nats.Msg) {
-	var event core.Event
-	if err := json.Unmarshal(msg.Data, &event); err != nil {
-		m.logger.Error("Failed to unmarshal event", "error", err)
-		return
-	}
-
-	// Only handle NodeDeleted events
-	if event.Type != core.EventNodeDeleted {
-		return
-	}
-
-	// Unmarshal the payload
-	var payload core.EventNodeDeletePayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		m.logger.Error("Failed to unmarshal NodeDeleted payload", "error", err)
-		return
-	}
-
-	// Get the local archive instance to access deletion methods
-	localArchive, ok := m.archive.(*LocalArchive)
-	if !ok {
-		m.logger.Warn("Archive is not a LocalArchive, skipping edge cleanup")
-		return
-	}
-
-	// Delete all edges connected to the deleted node
-	if err := localArchive.DeleteEdgesByNode(payload.NodeId); err != nil {
-		m.logger.Error("Failed to delete edges for deleted node",
-			"node_id", payload.NodeId.String(),
-			"error", err)
-		return
-	}
-
-	m.logger.Info("Cleaned up edges for deleted node",
-		"node_id", payload.NodeId.String())
 }
