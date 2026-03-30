@@ -44,3 +44,7 @@ $RECYCLE.BIN/
 # Upspeak default config file
 /upspeak.yaml
 /data/
+
+# Claude Code — track skills (shared), ignore personal settings and memory
+.claude/*
+!.claude/skills/
