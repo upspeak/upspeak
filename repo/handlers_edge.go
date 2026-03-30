@@ -7,6 +7,7 @@ import (
 
 	"github.com/upspeak/upspeak/api"
 	"github.com/upspeak/upspeak/core"
+
 )
 
 // createEdgeRequest is the expected JSON body for POST /repos/{repo_ref}/edges.
@@ -137,7 +138,7 @@ func (m *Module) batchCreateEdgesHandler() http.HandlerFunc {
 			}
 		}
 
-		if err := m.archive.SaveBatchEdges(repo.ID, edges); err != nil {
+		if err := m.archive.SaveBatchEdges(edges); err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to create edges")
 			return
 		}
@@ -158,18 +159,20 @@ func (m *Module) listEdgesHandler() http.HandlerFunc {
 			return
 		}
 
-		opts := api.ParsePagination(r)
-		source := r.URL.Query().Get("source")
-		target := r.URL.Query().Get("target")
-		edgeType := r.URL.Query().Get("type")
+		opts := core.EdgeListOptions{
+			Source:      r.URL.Query().Get("source"),
+			Target:      r.URL.Query().Get("target"),
+			Type:        r.URL.Query().Get("type"),
+			ListOptions: api.ParsePagination(r),
+		}
 
-		edges, total, err := m.archive.ListEdges(repo.ID, source, target, edgeType, opts)
+		edges, total, err := m.archive.ListEdges(repo.ID, opts)
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list edges")
 			return
 		}
 
-		api.WriteList(w, edges, total, opts)
+		api.WriteList(w, edges, total, opts.ListOptions)
 	}
 }
 

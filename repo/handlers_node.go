@@ -110,7 +110,7 @@ func (m *Module) batchCreateNodesHandler() http.HandlerFunc {
 			}
 		}
 
-		if err := m.archive.SaveBatchNodes(repo.ID, nodes); err != nil {
+		if err := m.archive.SaveBatchNodes(nodes); err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to create nodes")
 			return
 		}
@@ -131,16 +131,18 @@ func (m *Module) listNodesHandler() http.HandlerFunc {
 			return
 		}
 
-		opts := api.ParsePagination(r)
-		nodeType := r.URL.Query().Get("type")
+		opts := core.NodeListOptions{
+			Type:        r.URL.Query().Get("type"),
+			ListOptions: api.ParsePagination(r),
+		}
 
-		nodes, total, err := m.archive.ListNodes(repo.ID, nodeType, opts)
+		nodes, total, err := m.archive.ListNodes(repo.ID, opts)
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list nodes")
 			return
 		}
 
-		api.WriteList(w, nodes, total, opts)
+		api.WriteList(w, nodes, total, opts.ListOptions)
 	}
 }
 
