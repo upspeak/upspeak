@@ -24,6 +24,12 @@ cleanup() {
     echo "  Clean"
 }
 
+# Run tests
+run_tests() {
+    echo "Running tests..."
+    go test ./...
+}
+
 # Run in development mode
 dev() {
     echo "Starting development mode..."
@@ -57,6 +63,7 @@ Usage: ./build.sh [command]
 Commands:
   build       Build the application binary
   build-app   Build binary only (alias for build)
+  test        Run all tests
   cleanup     Clean build artifacts
   dev         Run in development mode
   help        Show this help
@@ -73,6 +80,7 @@ EOF
 case "${1:-}" in
     build) build ;;
     build-app) build_app ;;
+    test) run_tests ;;
     cleanup|clean) cleanup ;;
     dev) dev ;;
     help|--help|-h) show_help ;;
