@@ -299,33 +299,33 @@ func TestSequences(t *testing.T) {
 	a := setupTestArchive(t)
 	repoID := core.NewID()
 
-	// Repo sequence.
+	// Repo sequence (internal function, tested via the archive's db).
 	for i := 1; i <= 3; i++ {
-		seq, err := a.NextRepoSequence(repoID, "node")
+		seq, err := nextRepoSequence(a.db, repoID, "node")
 		if err != nil {
-			t.Fatalf("NextRepoSequence failed: %v", err)
+			t.Fatalf("nextRepoSequence failed: %v", err)
 		}
 		if seq != i {
 			t.Errorf("Expected sequence %d, got %d", i, seq)
 		}
 	}
 
-	// User sequence.
+	// User sequence (internal function).
 	for i := 1; i <= 3; i++ {
-		seq, err := a.NextUserSequence(testOwnerID, "repo")
+		seq, err := nextUserSequence(a.db, testOwnerID, "repo")
 		if err != nil {
-			t.Fatalf("NextUserSequence failed: %v", err)
+			t.Fatalf("nextUserSequence failed: %v", err)
 		}
 		if seq != i {
 			t.Errorf("Expected sequence %d, got %d", i, seq)
 		}
 	}
 
-	// Global sequence.
+	// Global sequence (internal function).
 	for i := 1; i <= 3; i++ {
-		seq, err := a.NextGlobalSequence("job")
+		seq, err := nextGlobalSequence(a.db, "job")
 		if err != nil {
-			t.Fatalf("NextGlobalSequence failed: %v", err)
+			t.Fatalf("nextGlobalSequence failed: %v", err)
 		}
 		if seq != i {
 			t.Errorf("Expected sequence %d, got %d", i, seq)

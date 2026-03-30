@@ -193,7 +193,7 @@ func TestSaveBatchEdges(t *testing.T) {
 		makeEdge(repo, nodeA, nodeC, "reply", "A to C"),
 	}
 
-	if err := a.SaveBatchEdges(repo.ID, edges); err != nil {
+	if err := a.SaveBatchEdges(edges); err != nil {
 		t.Fatalf("SaveBatchEdges failed: %v", err)
 	}
 
@@ -271,7 +271,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// List all edges in repo.
-	allEdges, allTotal, err := a.ListEdges(repo.ID, "", "", "", core.ListOptions{Limit: 10, Offset: 0})
+	allEdges, allTotal, err := a.ListEdges(repo.ID, core.EdgeListOptions{ListOptions: core.ListOptions{Limit: 10, Offset: 0}})
 	if err != nil {
 		t.Fatalf("ListEdges (all) failed: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Filter by source = nodeA.
-	srcEdges, srcTotal, err := a.ListEdges(repo.ID, nodeA.ID.String(), "", "", core.ListOptions{Limit: 10, Offset: 0})
+	srcEdges, srcTotal, err := a.ListEdges(repo.ID, core.EdgeListOptions{Source: nodeA.ID.String(), ListOptions: core.ListOptions{Limit: 10, Offset: 0}})
 	if err != nil {
 		t.Fatalf("ListEdges (source filter) failed: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Filter by target = nodeC.
-	tgtEdges, tgtTotal, err := a.ListEdges(repo.ID, "", nodeC.ID.String(), "", core.ListOptions{Limit: 10, Offset: 0})
+	tgtEdges, tgtTotal, err := a.ListEdges(repo.ID, core.EdgeListOptions{Target: nodeC.ID.String(), ListOptions: core.ListOptions{Limit: 10, Offset: 0}})
 	if err != nil {
 		t.Fatalf("ListEdges (target filter) failed: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Filter by type "reply".
-	replyEdges, replyTotal, err := a.ListEdges(repo.ID, "", "", "reply", core.ListOptions{Limit: 10, Offset: 0})
+	replyEdges, replyTotal, err := a.ListEdges(repo.ID, core.EdgeListOptions{Type: "reply", ListOptions: core.ListOptions{Limit: 10, Offset: 0}})
 	if err != nil {
 		t.Fatalf("ListEdges (type filter) failed: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestListEdges(t *testing.T) {
 	}
 
 	// Combined filter: source = nodeA, type = "link".
-	combined, combinedTotal, err := a.ListEdges(repo.ID, nodeA.ID.String(), "", "link", core.ListOptions{Limit: 10, Offset: 0})
+	combined, combinedTotal, err := a.ListEdges(repo.ID, core.EdgeListOptions{Source: nodeA.ID.String(), Type: "link", ListOptions: core.ListOptions{Limit: 10, Offset: 0}})
 	if err != nil {
 		t.Fatalf("ListEdges (combined filter) failed: %v", err)
 	}

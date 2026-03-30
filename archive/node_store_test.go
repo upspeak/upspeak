@@ -167,7 +167,7 @@ func TestSaveBatchNodes(t *testing.T) {
 		makeNode(repo, "task", "Batch 3"),
 	}
 
-	if err := a.SaveBatchNodes(repo.ID, nodes); err != nil {
+	if err := a.SaveBatchNodes(nodes); err != nil {
 		t.Fatalf("SaveBatchNodes failed: %v", err)
 	}
 
@@ -232,7 +232,7 @@ func TestListNodes(t *testing.T) {
 	}
 
 	// List all nodes.
-	nodes, total, err := a.ListNodes(repo.ID, "", core.ListOptions{Limit: 10, Offset: 0, SortBy: "created_at", Order: "asc"})
+	nodes, total, err := a.ListNodes(repo.ID, core.NodeListOptions{ListOptions: core.ListOptions{Limit: 10, Offset: 0, SortBy: "created_at", Order: "asc"}})
 	if err != nil {
 		t.Fatalf("ListNodes (all) failed: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestListNodes(t *testing.T) {
 	}
 
 	// Filter by type "note".
-	notes, noteTotal, err := a.ListNodes(repo.ID, "note", core.ListOptions{Limit: 10, Offset: 0, SortBy: "created_at", Order: "asc"})
+	notes, noteTotal, err := a.ListNodes(repo.ID, core.NodeListOptions{Type: "note", ListOptions: core.ListOptions{Limit: 10, Offset: 0, SortBy: "created_at", Order: "asc"}})
 	if err != nil {
 		t.Fatalf("ListNodes (note filter) failed: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestListNodes(t *testing.T) {
 	}
 
 	// Test pagination: limit 2, offset 0.
-	page1, pagTotal, err := a.ListNodes(repo.ID, "", core.ListOptions{Limit: 2, Offset: 0, SortBy: "created_at", Order: "asc"})
+	page1, pagTotal, err := a.ListNodes(repo.ID, core.NodeListOptions{ListOptions: core.ListOptions{Limit: 2, Offset: 0, SortBy: "created_at", Order: "asc"}})
 	if err != nil {
 		t.Fatalf("ListNodes (page 1) failed: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestListNodes(t *testing.T) {
 	}
 
 	// Test pagination: limit 2, offset 4 (should get 1 result).
-	page3, _, err := a.ListNodes(repo.ID, "", core.ListOptions{Limit: 2, Offset: 4, SortBy: "created_at", Order: "asc"})
+	page3, _, err := a.ListNodes(repo.ID, core.NodeListOptions{ListOptions: core.ListOptions{Limit: 2, Offset: 4, SortBy: "created_at", Order: "asc"}})
 	if err != nil {
 		t.Fatalf("ListNodes (page 3) failed: %v", err)
 	}
