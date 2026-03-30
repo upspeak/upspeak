@@ -11,7 +11,7 @@ metadata:
 
 ## Overview
 
-Upspeak is a personal-first, federated knowledge infrastructure. API-first (no bundled UI), hybrid sync core + NATS/JetStream, local-first with offline writes.
+Upspeak is a personal-first, federated knowledge infrastructure. API-first (no bundled UI), hybrid sync core + NATS JetStream, local-first with offline writes.
 
 Read `CLAUDE.md` at the project root for coding conventions, naming, error handling, and testing standards. This skill covers architecture and domain knowledge that CLAUDE.md cannot capture.
 
@@ -83,7 +83,8 @@ Event subjects: `repo.{repo_id}.events.{EventType}` (e.g., `NodeCreated`, `EdgeD
 
 ```go
 // main.go pattern:
-bus, _ := usnats.Start(config.Name, natsConfig)
+bus, err := usnats.Start(config.Name, natsConfig)
+// handle err...
 up := app.New(*config)
 up.SetSubscriber(bus.Subscriber())
 repoModule.SetPublisher(bus.Publisher())

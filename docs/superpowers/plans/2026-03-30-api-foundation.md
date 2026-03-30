@@ -6,7 +6,7 @@
 
 **Architecture:** Hybrid synchronous core + JetStream. Synchronous writes to SQLite archive, JetStream for downstream event propagation. All modules mount at `/api/v1`. NATS code isolated in a dedicated `nats/` module. UUID v7 replaces xid for all entity identifiers.
 
-**Tech Stack:** Go 1.25+, SQLite (via mattn/go-sqlite3), embedded NATS/JetStream, google/uuid (v7)
+**Tech Stack:** Go 1.25+, SQLite (via mattn/go-sqlite3), embedded NATS JetStream, google/uuid (v7)
 
 **Spec reference:** `docs/specs/api-foundation/00-index.md` (18 files)
 
@@ -980,7 +980,7 @@ This does not require structural changes to the Phase 5 plan — the existing `G
 
 ---
 
-## Known Gap: NATS/JetStream Implementation vs Spec
+## Known Gap: NATS JetStream Implementation vs Spec
 
 The current `nats/` package implements the minimum needed for Phases 1-2. The spec (`docs/specs/api-foundation/18-event-bus-adapter.md`) requires more before Phases 3-6 can proceed. This section documents the gaps.
 

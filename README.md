@@ -27,7 +27,7 @@ Upspeak will integrate with tools you already use to consume or create informati
 
 Upspeak is an **API-first** knowledge infrastructure. It provides a structured knowledge graph for collecting, organising, and querying information from diverse sources. Clients (web, mobile, CLI, AI agents) connect over the HTTP API.
 
-Upspeak uses a **hybrid synchronous core + NATS/JetStream** architecture:
+Upspeak uses a **hybrid synchronous core + NATS JetStream** architecture:
 - Writes go synchronously to the archive (confirmed to the client)
 - An embedded [NATS](https://nats.io) server with [JetStream](https://docs.nats.io/nats-concepts/jetstream) carries the downstream consequences — inter-module events, background processing, scheduled jobs, and multi-device sync
 

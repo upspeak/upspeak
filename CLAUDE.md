@@ -7,7 +7,7 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 **Architecture:**
 - **API-first**: Pure API server, no bundled UI. Clients connect over HTTP
 - **Modular design**: Each module implements the `app.Module` interface for HTTP and message handlers
-- **Hybrid sync core + JetStream**: Synchronous writes to archive (SQLite + files), NATS/JetStream for downstream events
+- **Hybrid sync core + NATS JetStream**: Synchronous writes to archive (SQLite + files), NATS JetStream for downstream events
 - **Hexagonal architecture**: Domain layer (`core/`) separated from infrastructure (`archive/`, `nats/`)
 - **NATS isolation**: All NATS code lives in `nats/` — no other package imports nats-io
 - **Local/remote archive split**: `core.Archive` interface supports both local (SQLite + files) and remote (Postgres + object storage) implementations
@@ -17,7 +17,7 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 - `app/`: Micro-framework for composing modules, HTTP routing, and application lifecycle. NATS-unaware — receives Publisher/Subscriber interfaces via DI
 - `core/`: Domain models (Node, Edge, Thread, Annotation, User, Repository), Archive sub-interfaces, event types, identity system
 - `archive/`: Local archive implementation (SQLite metadata + filesystem body storage). Implements `core.Archive`
-- `nats/`: NATS/JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle. Isolated from all other packages
+- `nats/`: NATS JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle. Isolated from all other packages
 - `repo/`: Repository CRUD and knowledge graph API module. Mounted at `/api/v1`
 - `api/`: Response envelope, HTTP helpers, middleware (ETag, RequestID)
 
