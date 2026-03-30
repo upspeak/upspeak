@@ -33,6 +33,20 @@ type AnnotationQueryOptions struct {
 	ListOptions
 }
 
+// NodeListOptions filters nodes in list operations.
+type NodeListOptions struct {
+	Type string // filter by node type; empty means all types
+	ListOptions
+}
+
+// EdgeListOptions filters edges in list operations.
+type EdgeListOptions struct {
+	Source string // filter by source node ref; empty means all
+	Target string // filter by target node ref; empty means all
+	Type   string // filter by edge type; empty means all
+	ListOptions
+}
+
 // SearchOptions provides structured search filters for nodes.
 type SearchOptions struct {
 	Type          []string          `json:"type"`
