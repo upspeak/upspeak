@@ -2,19 +2,24 @@
 
 ## Project Overview
 
-Upspeak is a personal knowledge management system and information client designed to collect, organise, and synthesise data from web sources and your own inputs. It follows a modular, event-driven architecture built on domain-driven design principles.
+Upspeak is a personal-first, federated knowledge infrastructure designed to collect, organise, and synthesise data from web sources and your own inputs. It follows a modular, event-driven architecture built on domain-driven design principles.
 
 **Architecture:**
-- **Modular design**: Each module implements the `app.Module` interface for HTTP and NATS handlers
-- **Event sourcing**: Domain events published via embedded NATS server for inter-module communication
-- **Hexagonal architecture**: Clear separation between domain layer (`core/`) and infrastructure
-- **Single binary deployment**: All modules embedded at compile time using Go's `embed` package
-- **Knowledge graph**: Nodes and Edges represent data points and their relationships
+- **API-first**: Pure API server, no bundled UI. Clients connect over HTTP
+- **Modular design**: Each module implements the `app.Module` interface for HTTP and message handlers
+- **Hybrid sync core + JetStream**: Synchronous writes to archive (SQLite + files), NATS/JetStream for downstream events
+- **Hexagonal architecture**: Domain layer (`core/`) separated from infrastructure (`archive/`, `nats/`)
+- **NATS isolation**: All NATS code lives in `nats/` — no other package imports nats-io
+- **Local/remote archive split**: `core.Archive` interface supports both local (SQLite + files) and remote (Postgres + object storage) implementations
+- **Knowledge graph**: Nodes, Edges, Threads, and Annotations form a structured graph with UUID v7 identifiers and human-friendly short IDs
 
 **Key packages:**
-- `app/`: Lightweight micro-framework for composing modules, managing HTTP/NATS servers, and application lifecycle
-- `core/`: Domain models (Node, Edge, User, Repository) and business logic
-- `ui/`: The UI module that bundles and embeds a Sveltekit application.
+- `app/`: Micro-framework for composing modules, HTTP routing, and application lifecycle. NATS-unaware — receives Publisher/Subscriber interfaces via DI
+- `core/`: Domain models (Node, Edge, Thread, Annotation, User, Repository), Archive sub-interfaces, event types, identity system
+- `archive/`: Local archive implementation (SQLite metadata + filesystem body storage). Implements `core.Archive`
+- `nats/`: NATS/JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle. Isolated from all other packages
+- `repo/`: Repository CRUD and knowledge graph API module. Mounted at `/api/v1`
+- `api/`: Response envelope, HTTP helpers, middleware (ETag, RequestID)
 
 ## Critical Rules
 
@@ -22,22 +27,19 @@ Upspeak is a personal knowledge management system and information client designe
 2. **ALWAYS** add GoDoc-style comments for all public functions and types
 3. **ALWAYS** add comments for longer private methods (>20 lines)
 4. **ALWAYS** write documentation in en-IN (Indian English with British spelling: "organise", "behaviour", "colour")
-5. **NEVER** respond with summaries unless explicitly requested
-6. **NEVER** skip error handling - check and handle all errors immediately
-7. **NEVER** use `panic` for normal error conditions
-8. **NEVER** create deep nesting - extract functions or use early returns
+5. **ALWAYS** make small commits per logical chunk of work, not monolithic batches
+6. **NEVER** respond with summaries unless explicitly requested
+7. **NEVER** skip error handling — check and handle all errors immediately
+8. **NEVER** use `panic` for normal error conditions
+9. **NEVER** create deep nesting — extract functions or use early returns
+10. **NEVER** add repository directory structure to README — structure is ephemeral
+11. **NEVER** put NATS imports in any package other than `nats/`
 
 ## Build Commands
 
 ```bash
-# Full build (modules + binary)
+# Build the binary
 ./build.sh build
-
-# Build ui module only
-./build.sh build-ui
-
-# Build binary only
-./build.sh build-app
 
 # Development mode (requires upspeak.yaml)
 ./build.sh dev
@@ -49,424 +51,156 @@ Upspeak is a personal knowledge management system and information client designe
 go test ./...
 ```
 
+## Identity System
+
+All entities use **UUID v7** as primary key (time-ordered, via `google/uuid`). Each entity also carries a **short ID** — a human-friendly `{PREFIX}-{SEQ}` identifier:
+
+- `REPO-1`, `NODE-42`, `EDGE-15`, `THREAD-7`, `ANNO-3`
+- Short ID sequences are scoped: per-repo (nodes, edges, threads, annotations), per-user (repos), or global (jobs, schedules, users)
+- `core.NewID()` generates a UUID v7. `core.FormatShortID(prefix, seq)` formats a short ID
+- `core.ParseShortID(s)` extracts prefix and sequence number
+- Sequence generation is internal to `archive/` — not exposed through `core.Archive`
+
+## Archive Interface
+
+`core.Archive` is composed of sub-interfaces that both local and remote implementations can satisfy:
+
+```go
+type Archive interface {
+    RepositoryStore   // SaveRepository, GetRepository, ListRepositories, DeleteRepository, slug management
+    NodeStore         // SaveNode, SaveBatchNodes, GetNode, DeleteNode, ListNodes, GetNodeEdges, GetNodeAnnotations
+    EdgeStore         // SaveEdge, SaveBatchEdges, GetEdge, DeleteEdge, ListEdges
+    ThreadStore       // SaveThread, GetThread, DeleteThread, ListThreads, AddNodeToThread, RemoveNodeFromThread
+    AnnotationStore   // SaveAnnotation, GetAnnotation, DeleteAnnotation, ListAnnotations
+    RefResolver       // ResolveRef — resolves short ID or UUID to (uuid, entityType, error)
+}
+```
+
+**Local archive storage split:**
+- **Metadata** (SQLite): type, subject, content_type, edges, config — everything queryable
+- **Node body content** (filesystem): stored at `{archive_path}/content/{node_id}` as files
+- This mirrors the high-level architecture: local = SQLite + files, remote = Postgres + object storage
+
+**Optimistic concurrency:** All entities carry a `Version` field (integer, starts at 1). Write methods check `Version` — if stored version doesn't match, returns `VersionConflictError`. HTTP layer maps this to ETag/If-Match headers and 412 responses.
+
+**Batch methods** take `[]*Node` or `[]*Edge` — each entity has `RepoID` already set by the caller.
+
+**List methods** use typed option structs: `NodeListOptions{Type, ListOptions}`, `EdgeListOptions{Source, Target, Type, ListOptions}`.
+
+## Module Development
+
+All modules implement the `app.Module` interface:
+
+```go
+type Module interface {
+    Name() string
+    Init(config map[string]any) error
+    HTTPHandlers() []HTTPHandler   // No parameters — dependencies via setters
+    MsgHandlers() []MsgHandler     // No parameters — dependencies via setters
+}
+```
+
+Dependencies (archive, publisher) are injected via setter methods (e.g., `SetArchive()`, `SetPublisher()`), not via handler method parameters.
+
+**Module mounting:** All API modules mount at `/api/v1`. Multiple modules can share the same mount path — `http.ServeMux` resolves by method+path specificity.
+
+## NATS Communication
+
+All NATS code is isolated in the `nats/` package. Other modules interact via `app.Publisher` and `app.Subscriber` interfaces:
+
+```go
+type Publisher interface {
+    Publish(subject string, data []byte) error
+}
+
+type Subscriber interface {
+    Subscribe(subject string, handler func(subject string, data []byte)) error
+}
+```
+
+**Event subject format:** `repo.{repo_id}.events.{EventType}` (e.g., `repo.{uuid}.events.NodeCreated`)
+
+**JetStream streams:**
+- Per-repo: `REPO_{repo_id}_EVENTS` — captures `repo.{repo_id}.events.>`
+- Jobs: `JOBS` — work queue retention (planned, not yet implemented)
+- Schedules: `SCHEDULES` — work queue retention (planned, not yet implemented)
+
+**Known gap:** The current Publisher/Subscriber interfaces are minimal (basic pub/sub). JetStream features (durable consumers, ack/nack, pull consumers, work queues) are not yet exposed. This will need addressing before Phases 3-6.
+
+## HTTP API Conventions
+
+**Response envelope:** All responses use `{"data": ..., "meta": {...}, "error": {...}}`
+
+**Flat URL routing:** Entities are accessed at `/api/v1/repos/{repo_ref}/{entity_ref}` — the short ID prefix encodes the type. Collection endpoints use typed paths (`/nodes`, `/edges`, `/threads`, `/annotations`).
+
+**Ref resolution:** `{repo_ref}` can be UUID, short ID, or slug. `{entity_ref}` can be UUID or short ID. Old slugs return 301 redirects.
+
+**Pagination:** `?limit=20&offset=0&sort_by=created_at&order=desc`
+
+## Configuration
+
+**YAML-based:** See `upspeak.sample.yaml` for structure.
+
+```yaml
+name: "upspeak"
+nats:
+  embedded: true
+  private: false
+  logging: false
+http:
+  port: 8080
+modules:
+  archive:
+    enabled: true
+    config:
+      type: local
+      path: ./data
+```
+
+**First-time setup:** `cp upspeak.sample.yaml upspeak.yaml`
+
 ## File Organisation
 
 - **Logical separation**: One file per major concern or responsibility
 - **Type definitions first**: Define types before functions that use them
 - **Private helpers**: Use lowercase names for unexported functions
 - **Co-located tests**: Place `*_test.go` files alongside implementation
-- **New module location**: New modules are placed in the repo root directory, unless specifically asked to be put elsewhere.
-
-Example structure:
-```go
-package mymodule
-
-// Types first
-type Config struct { ... }
-type Handler struct { ... }
-
-// Public functions
-func New(config Config) *Handler { ... }
-
-func (h *Handler) PublicMethod() error { ... }
-
-// Private helpers
-func normalisePath(path string) string { ... }
-```
+- **New module location**: New modules are placed in the repo root directory
 
 ## Naming Conventions
 
-**Types:**
-- PascalCase for exported types: `Node`, `Edge`, `Repository`, `ErrorNotFound`
-- Descriptive names: `HTTPHandler`, `MsgHandler`, `EventType`
-
-**Functions:**
-- PascalCase for exported: `New()`, `LoadConfig()`, `AddModuleOnPath()`
-- camelCase for private: `normalisePath()`, `isReservedPath()`, `handleInputEvent()`
-- Constructor pattern: `New<Type>()`
-
-**Variables:**
-- Short for common patterns: `err`, `nc`, `ctx`, `req`, `w`, `r`
-- Descriptive for complex types: `modules`, `rootModule`, `inputEvent`
-- Single-letter receivers: `a *App`, `r *Repository`, `p *Publisher`
-
-**Constants:**
-- Use typed constants with semantic grouping:
-```go
-type EventType string
-
-const (
-	// Input events
-	EventCreateNode EventType = "CreateNode"
-	EventUpdateNode EventType = "UpdateNode"
-
-	// Output events
-	EventNodeCreated EventType = "NodeCreated"
-	EventNodeUpdated EventType = "NodeUpdated"
-)
-```
-
-## Documentation Patterns
-
-**Function documentation:**
-```go
-// AddModuleOnPath registers a module at the specified path.
-//
-// Path rules:
-//   - Empty string "" mounts at root (/)
-//   - Leading slash is optional and will be normalised
-//   - Trailing slashes are removed
-//   - Only one module can be mounted at root
-//
-// Examples:
-//
-//	app.AddModuleOnPath(&ui.Module{}, "")         // Root: /
-//	app.AddModuleOnPath(&api.Module{}, "/api")    // Namespaced: /api/*
-func (a *App) AddModuleOnPath(module Module, path string) error {
-```
-
-**Type documentation:**
-```go
-// Config defines the application configuration.
-// Fields are populated from YAML files via mapstructure tags.
-type Config struct {
-	// Name of the application. Use only lowercase letters, dashes and underscores.
-	Name string `mapstructure:"name"`
-	// NATS server configuration
-	NATS NATSConfig `mapstructure:"nats"`
-}
-```
+**Types:** PascalCase — `Node`, `Edge`, `Repository`, `ErrorNotFound`, `HTTPHandler`
+**Functions:** PascalCase exported, camelCase private. Constructor pattern: `New<Type>()`
+**Variables:** Short for common patterns (`err`, `nc`, `ctx`, `w`, `r`). Single-letter receivers (`a *App`, `m *Module`)
+**Constants:** Typed constants with semantic grouping (`EventType`, `ConnectorType`, `JobStatus`)
 
 ## Error Handling
 
-**Use custom error types for domain errors:**
-```go
-type ErrorNotFound struct {
-	resource string
-	msg      string
-}
-
-func (e *ErrorNotFound) Error() string {
-	return fmt.Sprintf("not found error: Could not find %s. Message: %s", e.resource, e.msg)
-}
-```
-
-**Wrap errors with context:**
-```go
-if err := r.archive.SaveNode(node); err != nil {
-	return fmt.Errorf("failed to save node: %w", err)
-}
-```
-
-**Check errors immediately:**
-```go
-if err != nil {
-	return err
-}
-```
-
-## Function Design
-
-- **Prefer small functions**: Target under 30 lines for most functions
-- **Single responsibility**: Each function should do one thing well
-- **Extract helpers**: Break complex logic into smaller private functions
-- **Early returns**: Reduce nesting depth with guard clauses
-
-**Good example:**
-```go
-func (a *App) AddModule(module Module) error {
-	if err := a.validateModule(module); err != nil {
-		return err
-	}
-	
-	path := "/" + module.Name()
-	return a.AddModuleOnPath(module, path)
-}
-```
-
-## Module Development
-
-All modules must implement the `app.Module` interface:
-
-```go
-type Module interface {
-	Name() string
-	Init(config map[string]any) error
-	HTTPHandlers(pub Publisher) []HTTPHandler
-	MsgHandlers(pub Publisher) []MsgHandler
-}
-```
-
-**HTTP Handler structure:**
-```go
-HTTPHandler struct {
-	Method  string           // "GET", "POST", etc.
-	Path    string           // Handler path relative to module mount
-	Handler http.HandlerFunc // Standard http.HandlerFunc
-}
-```
-
-**NATS Message Handler structure:**
-```go
-MsgHandler struct {
-	Subject string                // NATS subject pattern
-	Handler func(msg *nats.Msg)   // Message handling function
-}
-```
-
-**Module mounting rules:**
-- Empty string `""` or `"/"` mounts at root
-- Leading slash is optional and normalised automatically
-- Trailing slashes are removed
-- Only one module can be mounted at root
-- Paths cannot conflict with reserved endpoints (`/healthz`, `/readiness`)
-- Root module handlers are registered last for proper catch-all routing
-
-## Frontend Integration (ui module)
-
-**Embedding strategy:**
-- `//go:embed web/build/*` - SvelteKit production build
-- `//go:embed web/static/*` - Static assets (favicon, robots.txt)
-- Handler order matters: `/_app/` assets → static files → SPA fallback (`/`)
-
-**SPA routing:** All unmatched routes serve `index.html` for client-side routing
-
-**Build requirement:** Must run `cd ui/web && npm run build` before `go build` to populate embed directives
-
-**Development with hot reload:** `cd ui/web && npm run dev` (runs on :5173, proxy to :8080 for backend API)
-
-**Embedding pattern example:**
-```go
-//go:embed web/build/*
-var buildFS embed.FS
-
-// Access files with "web/build" prefix
-data, err := buildFS.ReadFile("web/build/index.html")
-```
-
-## NATS Communication Patterns
-
-**Module subjects:** Each module defines its own subject namespace:
-```go
-func (m *ModuleExample) MsgHandlers(pub app.Publisher) []app.MsgHandler {
-	return []app.MsgHandler{
-		{
-			Subject: "example.events",  // Use module-specific namespace
-			Handler: m.handleEvent,
-		},
-	}
-}
-```
-
-**Repository subjects (core/ domain only):**
-- Input events: `repos.{id}.in` - for commands/operations
-- Output events: `repos.{id}.out` - for event notifications
-
-**Publishing events from Repository:**
-```go
-event, err := NewEvent(EventNodeCreated, EventNodeCreatePayload{Node: node})
-if err != nil {
-	return &ErrorEventCreation{msg: "EventNodeCreated"}
-}
-if err := r.publishEvent(event); err != nil {
-	return &ErrorPublish{msg: "EventNodeCreated"}
-}
-```
-
-## Configuration
-
-**YAML-based:** See `upspeak.sample.yaml` for structure
-
-```yaml
-name: "upspeak"
-nats:
-  embedded: true   # Run in-process NATS server
-  private: false   # Allow external connections
-  logging: false   # Enable NATS debug logging
-http:
-  port: 8080
-modules:
-  writer:
-    enabled: true
-    config: {...}   # Module-specific configuration
-```
-
-**Module config:** Passed to `Module.Init(config map[string]any)` from YAML `modules.<name>.config`
-
-**First-time setup:** `cp upspeak.sample.yaml upspeak.yaml` before running `./build.sh dev`
-
-## HTTP Routing (Go 1.22+ Pattern Matching)
-
-**CRITICAL:** Always use method-specific patterns to avoid conflicts:
-
-```go
-// Good - method-specific
-a.httpRouter.HandleFunc("GET /healthz", handler)
-a.httpRouter.HandleFunc("POST /api/nodes", handler)
-
-// Bad - method-agnostic (can conflict with root handlers)
-a.httpRouter.HandleFunc("/healthz", handler)
-```
-
-**Pattern conflict rules:**
-- Method-agnostic patterns match all HTTP methods
-- More specific paths with broader methods conflict with general paths
-- Always specify methods for system endpoints (`GET /healthz`, `GET /readiness`)
+Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `ErrorSlugRedirect`). Wrap errors with `fmt.Errorf("context: %w", err)`. Check immediately.
 
 ## Testing Standards
 
-- Write table-driven tests for multiple cases
-- Use meaningful test names: `TestAddModuleOnPath_RootMount`
+- Table-driven tests for multiple cases
+- Meaningful test names: `TestSaveNode_VersionConflict`
 - Test error cases and edge conditions
-- Mock external dependencies (NATS, HTTP servers)
 - Co-locate test files with implementation
+- Use `setupTestArchive(t)` pattern for archive tests (creates temp dir, auto-cleanup)
 
-```go
-func TestNormalisePath(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"empty string", "", ""},
-		{"root slash", "/", ""},
-		{"without leading slash", "api", "/api"},
-		{"with trailing slash", "/api/", "/api"},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := normalisePath(tt.input)
-			if got != tt.expected {
-				t.Errorf("normalisePath(%q) = %q, want %q", tt.input, got, tt.expected)
-			}
-		})
-	}
-}
-```
+## Implementation Plan
 
-## Domain Models (core/)
+The full API foundation is implemented in 6 phases. See `docs/specs/api-foundation/` for the complete spec and `docs/superpowers/plans/2026-03-30-api-foundation.md` for the implementation plan.
 
-**Node**: Basic unit of information in knowledge graph
-- `ID`: Unique identifier (xid.ID)
-- `Type`: Node type/category
-- `Subject`: Brief description
-- `ContentType`: MIME type of body content
-- `Body`: JSON-encoded content
-- `Metadata`: Key-value pairs for additional data
-- `CreatedBy`, `CreatedAt`: Audit fields
-
-**Edge**: Relationship between nodes
-- `Source`, `Target`: Node IDs being related
-- `Type`: Relationship type ("reply", "annotation", etc.)
-- `Label`: Human-readable relationship description
-- `Weight`: Importance/strength of relationship
-
-**Repository**: Domain aggregate for managing nodes/edges
-- Encapsulates archive storage
-- Handles NATS pub/sub for events
-- Processes input commands and emits output events
-
-## Two-Phase Module Registration
-
-Register modules in two phases for correct routing priority:
-
-```go
-// First pass: Register all non-root modules
-for name, mount := range a.modules {
-	if mount.path == "" {
-		continue
-	}
-	if err := a.registerModule(name, mount, pub); err != nil {
-		return err
-	}
-}
-
-// Second pass: Register root module last (gives it catch-all priority)
-if a.rootModule != "" {
-	mount := a.modules[a.rootModule]
-	if err := a.registerModule(a.rootModule, mount, pub); err != nil {
-		return err
-	}
-}
-```
-
-## Workflow Best Practices
-
-**When making changes:**
-1. **Read relevant files first** - understand context before coding
-2. **Make a plan** - outline approach before implementation
-3. **Ask for confirmation** - verify plan before proceeding
-4. **Implement incrementally** - make small, verifiable changes
-5. **Test as you go** - run tests after each significant change
-6. **Commit logically** - group related changes together
-
-**When exploring codebase:**
-- Use semantic search for concepts and patterns
-- Read git history to understand design decisions
-- Check tests to understand expected behaviour
-- Look for similar implementations as templates
-
-**When debugging:**
-- Check error messages carefully
-- Read relevant test files
-- Examine git history for related changes
-- Consider edge cases and error paths
-
-## Code Review Checklist
-
-Before submitting code, ensure:
-- [ ] All public functions have GoDoc comments
-- [ ] Error handling follows project patterns
-- [ ] Tests added for new functionality
-- [ ] Code formatted with `gofmt`
-- [ ] No lint warnings from `go vet`
-- [ ] Function complexity is reasonable (under 30 lines for most)
-- [ ] Proper use of interfaces for abstraction
-- [ ] Thread-safe access to shared state
-- [ ] Documentation uses en-IN language
-- [ ] HTTP handlers specify methods explicitly
-
-## Common Patterns
-
-**Path normalisation:**
-```go
-func normalisePath(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return strings.TrimSuffix(path, "/")
-}
-```
-
-**Logging for root paths:**
-```go
-logPath := mount.path
-if logPath == "" {
-	logPath = "/"
-}
-a.logger.Info("Initialising module", "module", name, "path", logPath)
-```
+**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass (archive interface alignment)
+**Next:** Phase 3 (filters + jobs)
+**After Phase 3:** Phases 4 (connectors + schedules), 5 (rules + search), 6 (real-time + sync) can proceed in parallel
 
 ## Common Pitfalls
 
-1. **Don't build manually** - Always use `build.sh` to ensure frontend embeds correctly. Running `go build` directly will fail or produce broken binaries if frontend isn't built.
-2. **Module paths** - Root path is `""` (empty string), not `"/"`. Use `AddModuleOnPath(module, "")` for root mounting.
-3. **Event payloads** - Always unmarshal to specific payload types (e.g., `EventNodeCreatePayload`), not generic maps.
-4. **NATS subjects** - Modules define their own subject namespaces (e.g., `"writer.events"`). Only `Repository` (in `core/`) uses the `repos.{id}.in/out` pattern.
-5. **Embedded FS paths** - Use `"web/build"` prefix when accessing `buildFS.ReadFile()`. The embed directive includes the directory structure.
-6. **HTTP method patterns** - Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts with catch-all handlers.
-7. **Reserved paths** - Never mount modules at `/healthz` or `/readiness` (system endpoints).
-8. **json.RawMessage** - Has known performance penalties. Use for flexibility but validate thoroughly.
-
-## Getting Help
-
-- Check `app/README.md` for framework details
-- See `core/README.md` for domain model documentation
-- Read `CONTRIBUTING.md` for contribution guidelines
-- Examine existing tests for usage examples
-- Review git history for design rationale
+1. **Node body is NOT in SQLite** — Body content is stored as files at `{archive_path}/content/{node_id}`. The `nodes` table has no `body` column.
+2. **Sequence methods are private** — `nextRepoSequence`, `nextUserSequence`, `nextGlobalSequence` are package-private functions in `archive/sequences.go`, not on the `core.Archive` interface.
+3. **Module interface has no parameters** — `HTTPHandlers()` and `MsgHandlers()` take no arguments. Dependencies injected via setter methods.
+4. **HTTP method patterns** — Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts.
+5. **Reserved paths** — Never mount modules at `/healthz` or `/readiness` (system endpoints).
+6. **NATS isolation** — Only the `nats/` package imports `github.com/nats-io/*`. All other packages use `app.Publisher`/`app.Subscriber` interfaces.
+7. **Short IDs are immutable** — Once assigned, a short ID never changes. Sequences never reuse numbers.
+8. **Batch methods don't take repoID** — Each entity in the batch already has `RepoID` set by the caller.
