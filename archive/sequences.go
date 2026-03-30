@@ -7,10 +7,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// dbExecer abstracts *sql.DB and *sql.Tx so sequence functions can be used
+// both inside and outside transactions.
+type dbExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // nextRepoSequence atomically increments and returns the next sequence number
 // for the given entity type within a repository.
-func nextRepoSequence(db *sql.DB, repoID uuid.UUID, entity string) (int, error) {
-	// Insert initial row if not exists, then atomically increment.
+func nextRepoSequence(db dbExecer, repoID uuid.UUID, entity string) (int, error) {
 	_, err := db.Exec(`
 		INSERT INTO repo_sequences (repo_id, entity, next_seq)
 		VALUES (?, ?, 1)

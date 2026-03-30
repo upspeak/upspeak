@@ -104,68 +104,104 @@ func (a *LocalArchive) NextGlobalSequence(entity string) (int, error) {
 	return nextGlobalSequence(a.db, entity)
 }
 
-// --- Stub implementations for entities not yet fully implemented (Phase 2) ---
+// --- Node operations ---
 
 func (a *LocalArchive) SaveNode(node *core.Node) error {
-	return fmt.Errorf("not implemented: SaveNode (Phase 2)")
+	return a.saveNode(node)
+}
+
+func (a *LocalArchive) SaveBatchNodes(repoID uuid.UUID, nodes []*core.Node) error {
+	return a.saveBatchNodes(repoID, nodes)
 }
 
 func (a *LocalArchive) GetNode(nodeID uuid.UUID) (*core.Node, error) {
-	return nil, fmt.Errorf("not implemented: GetNode (Phase 2)")
+	return a.getNode(nodeID)
 }
 
 func (a *LocalArchive) DeleteNode(nodeID uuid.UUID) error {
-	return fmt.Errorf("not implemented: DeleteNode (Phase 2)")
+	return a.deleteNode(nodeID)
 }
 
-func (a *LocalArchive) ListNodes(repoID uuid.UUID, opts core.ListOptions) ([]core.Node, int, error) {
-	return nil, 0, fmt.Errorf("not implemented: ListNodes (Phase 2)")
+func (a *LocalArchive) ListNodes(repoID uuid.UUID, nodeType string, opts core.ListOptions) ([]core.Node, int, error) {
+	return a.listNodes(repoID, nodeType, opts)
 }
+
+func (a *LocalArchive) GetNodeEdges(nodeID uuid.UUID, opts core.EdgeQueryOptions) ([]core.Edge, int, error) {
+	return a.getNodeEdges(nodeID, opts)
+}
+
+func (a *LocalArchive) GetNodeAnnotations(nodeID uuid.UUID, opts core.AnnotationQueryOptions) ([]core.Annotation, int, error) {
+	return a.getNodeAnnotations(nodeID, opts)
+}
+
+// --- Edge operations ---
 
 func (a *LocalArchive) SaveEdge(edge *core.Edge) error {
-	return fmt.Errorf("not implemented: SaveEdge (Phase 2)")
+	return a.saveEdge(edge)
+}
+
+func (a *LocalArchive) SaveBatchEdges(repoID uuid.UUID, edges []*core.Edge) error {
+	return a.saveBatchEdges(repoID, edges)
 }
 
 func (a *LocalArchive) GetEdge(edgeID uuid.UUID) (*core.Edge, error) {
-	return nil, fmt.Errorf("not implemented: GetEdge (Phase 2)")
+	return a.getEdge(edgeID)
 }
 
 func (a *LocalArchive) DeleteEdge(edgeID uuid.UUID) error {
-	return fmt.Errorf("not implemented: DeleteEdge (Phase 2)")
+	return a.deleteEdge(edgeID)
 }
 
-func (a *LocalArchive) ListEdges(repoID uuid.UUID, opts core.ListOptions) ([]core.Edge, int, error) {
-	return nil, 0, fmt.Errorf("not implemented: ListEdges (Phase 2)")
+func (a *LocalArchive) ListEdges(repoID uuid.UUID, source, target, edgeType string, opts core.ListOptions) ([]core.Edge, int, error) {
+	return a.listEdges(repoID, source, target, edgeType, opts)
 }
+
+// --- Thread operations ---
 
 func (a *LocalArchive) SaveThread(thread *core.Thread) error {
-	return fmt.Errorf("not implemented: SaveThread (Phase 2)")
+	return a.saveThread(thread)
 }
 
 func (a *LocalArchive) GetThread(threadID uuid.UUID) (*core.Thread, error) {
-	return nil, fmt.Errorf("not implemented: GetThread (Phase 2)")
+	return a.getThread(threadID)
 }
 
 func (a *LocalArchive) DeleteThread(threadID uuid.UUID) error {
-	return fmt.Errorf("not implemented: DeleteThread (Phase 2)")
+	return a.deleteThread(threadID)
 }
 
 func (a *LocalArchive) ListThreads(repoID uuid.UUID, opts core.ListOptions) ([]core.Thread, int, error) {
-	return nil, 0, fmt.Errorf("not implemented: ListThreads (Phase 2)")
+	return a.listThreads(repoID, opts)
 }
 
+func (a *LocalArchive) AddNodeToThread(threadID, nodeID uuid.UUID, edgeType string) error {
+	return a.addNodeToThread(threadID, nodeID, edgeType)
+}
+
+func (a *LocalArchive) RemoveNodeFromThread(threadID, nodeID uuid.UUID) error {
+	return a.removeNodeFromThread(threadID, nodeID)
+}
+
+// --- Annotation operations ---
+
 func (a *LocalArchive) SaveAnnotation(annotation *core.Annotation) error {
-	return fmt.Errorf("not implemented: SaveAnnotation (Phase 2)")
+	return a.saveAnnotation(annotation)
 }
 
 func (a *LocalArchive) GetAnnotation(annotationID uuid.UUID) (*core.Annotation, error) {
-	return nil, fmt.Errorf("not implemented: GetAnnotation (Phase 2)")
+	return a.getAnnotation(annotationID)
 }
 
 func (a *LocalArchive) DeleteAnnotation(annotationID uuid.UUID) error {
-	return fmt.Errorf("not implemented: DeleteAnnotation (Phase 2)")
+	return a.deleteAnnotation(annotationID)
 }
 
 func (a *LocalArchive) ListAnnotations(repoID uuid.UUID, opts core.ListOptions) ([]core.Annotation, int, error) {
-	return nil, 0, fmt.Errorf("not implemented: ListAnnotations (Phase 2)")
+	return a.listAnnotations(repoID, opts)
+}
+
+// --- Entity ref resolution ---
+
+func (a *LocalArchive) ResolveRef(repoID uuid.UUID, ref string) (uuid.UUID, string, error) {
+	return a.resolveRef(repoID, ref)
 }

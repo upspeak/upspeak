@@ -8,9 +8,9 @@ import (
 	"github.com/upspeak/upspeak/core"
 )
 
-// Module implements the app.Module interface for repository management.
-// It exposes HTTP endpoints for repository CRUD and will be extended in
-// Phase 2 for knowledge graph operations (nodes, edges, threads, annotations).
+// Module implements the app.Module interface for repository and knowledge graph
+// management. It exposes HTTP endpoints for repository CRUD and entity operations
+// (nodes, edges, threads, annotations) with flat URL routing.
 type Module struct {
 	archive core.Archive
 	pub     app.Publisher
@@ -43,18 +43,47 @@ func (m *Module) SetPublisher(pub app.Publisher) {
 // All paths are relative to the module's mount point (/api/v1).
 func (m *Module) HTTPHandlers() []app.HTTPHandler {
 	return []app.HTTPHandler{
-		// Repository CRUD
+		// Repository CRUD.
 		{Method: "POST", Path: "/repos", Handler: m.createRepoHandler()},
 		{Method: "GET", Path: "/repos", Handler: m.listReposHandler()},
 		{Method: "GET", Path: "/repos/{repo_ref}", Handler: m.getRepoHandler()},
 		{Method: "PUT", Path: "/repos/{repo_ref}", Handler: m.updateRepoHandler()},
 		{Method: "PATCH", Path: "/repos/{repo_ref}", Handler: m.patchRepoHandler()},
 		{Method: "DELETE", Path: "/repos/{repo_ref}", Handler: m.deleteRepoHandler()},
+
+		// Node collection endpoints.
+		{Method: "POST", Path: "/repos/{repo_ref}/nodes", Handler: m.createNodeHandler()},
+		{Method: "POST", Path: "/repos/{repo_ref}/nodes/batch", Handler: m.batchCreateNodesHandler()},
+		{Method: "GET", Path: "/repos/{repo_ref}/nodes", Handler: m.listNodesHandler()},
+
+		// Edge collection endpoints.
+		{Method: "POST", Path: "/repos/{repo_ref}/edges", Handler: m.createEdgeHandler()},
+		{Method: "POST", Path: "/repos/{repo_ref}/edges/batch", Handler: m.batchCreateEdgesHandler()},
+		{Method: "GET", Path: "/repos/{repo_ref}/edges", Handler: m.listEdgesHandler()},
+
+		// Thread collection endpoints.
+		{Method: "POST", Path: "/repos/{repo_ref}/threads", Handler: m.createThreadHandler()},
+		{Method: "GET", Path: "/repos/{repo_ref}/threads", Handler: m.listThreadsHandler()},
+
+		// Annotation collection endpoints.
+		{Method: "POST", Path: "/repos/{repo_ref}/annotations", Handler: m.createAnnotationHandler()},
+		{Method: "GET", Path: "/repos/{repo_ref}/annotations", Handler: m.listAnnotationsHandler()},
+
+		// Flat URL entity access (GET/PUT/PATCH/DELETE by entity ref).
+		{Method: "GET", Path: "/repos/{repo_ref}/{entity_ref}", Handler: m.entityHandler()},
+		{Method: "PUT", Path: "/repos/{repo_ref}/{entity_ref}", Handler: m.entityHandler()},
+		{Method: "PATCH", Path: "/repos/{repo_ref}/{entity_ref}", Handler: m.entityHandler()},
+		{Method: "DELETE", Path: "/repos/{repo_ref}/{entity_ref}", Handler: m.entityHandler()},
+
+		// Entity sub-resources (e.g. /NODE-42/edges, /THREAD-7/nodes).
+		{Method: "GET", Path: "/repos/{repo_ref}/{entity_ref}/{sub}", Handler: m.entitySubHandler()},
+		{Method: "POST", Path: "/repos/{repo_ref}/{entity_ref}/{sub}", Handler: m.entitySubHandler()},
+		{Method: "DELETE", Path: "/repos/{repo_ref}/{entity_ref}/{sub}", Handler: m.threadNodeDeleteHandler()},
 	}
 }
 
 // MsgHandlers returns the message handlers for the repo module.
-// Event-driven handlers will be added in Phase 2.
+// Cascading delete handlers will be added when JetStream consumers are wired.
 func (m *Module) MsgHandlers() []app.MsgHandler {
 	return []app.MsgHandler{}
 }
