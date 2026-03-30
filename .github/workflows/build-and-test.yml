@@ -4,33 +4,24 @@
 name: Build and Test
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    push:
+        branches: ["main"]
+    pull_request:
+        branches: ["main"]
 
 jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+            - name: Set up Go
+              uses: actions/setup-go@v6
+              with:
+                  go-version-file: "go.mod"
 
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version-file: 'go.mod'
+            - name: Build
+              run: bash build.sh build
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-
-    - name: Install dependencies
-      run: cd ui/web && npm install
-
-    - name: Build
-      run: bash build.sh build
-
-    - name: Test
-      run: go test -v ./...
+            - name: Test
+              run: go test -v ./...
