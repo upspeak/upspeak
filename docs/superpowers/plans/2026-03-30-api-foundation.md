@@ -856,3 +856,124 @@ Phase 6 (Real-time + Sync) ────┘──── needs Phase 2 + Phase 3  
 ```
 
 After Phase 1, Phases 2 and 3 can proceed in parallel. After both 2 and 3 are done, Phases 4, 5, and 6 can all proceed in parallel.
+
+---
+
+## Correction Pass: Archive Interface Alignment
+
+**Goal:** Align the Archive interface and storage implementation with the high-level architecture diagram (`assets/high-level-concepts-0.1.png`). The diagram defines Archive as having distinct Local (SQLite + files) and Remote (Postgres + Object Storage) implementations. The Phase 1–2 implementation leaked SQLite-specific details into `core.Archive` and stored node body content in SQLite instead of as files.
+
+**Depends on:** Phase 2 (completed)
+**Must complete before:** Phase 3
+
+**Branch:** `fix/archive-interface-cleanup`
+
+### Correction 1: Split `core.Archive` into composable sub-interfaces
+
+The monolithic `core.Archive` interface is split into composable sub-interfaces that both local and remote implementations can satisfy independently:
+
+```go
+type RepositoryStore interface { ... }
+type NodeStore interface { ... }
+type EdgeStore interface { ... }
+type ThreadStore interface { ... }
+type AnnotationStore interface { ... }
+type RefResolver interface { ... }
+
+// Archive composes all sub-interfaces.
+type Archive interface {
+    RepositoryStore
+    NodeStore
+    EdgeStore
+    ThreadStore
+    AnnotationStore
+    RefResolver
+}
+```
+
+**Files:** `core/archive.go`
+
+### Correction 2: Remove sequence methods from `core.Archive`
+
+`NextRepoSequence`, `NextUserSequence`, `NextGlobalSequence` are SQLite-specific implementation details. A remote archive (Postgres) would use database-native sequences internally. These methods are only called within the `archive/` package — no module ever calls them through the interface.
+
+**Action:** Remove from `core.Archive`. Keep as private functions in `archive/sequences.go`. Remove public wrappers from `archive/local.go`.
+
+**Files:** `core/archive.go`, `archive/local.go`, `archive/sequences.go`
+
+### Correction 3: Fix batch and list method signatures
+
+Batch methods should not take a separate `repoID` parameter — each entity already carries `RepoID`. List methods should move filter parameters into typed option structs:
+
+| Before | After |
+|---|---|
+| `SaveBatchNodes(repoID, nodes)` | `SaveBatchNodes(nodes)` |
+| `SaveBatchEdges(repoID, edges)` | `SaveBatchEdges(edges)` |
+| `ListNodes(repoID, nodeType, opts)` | `ListNodes(repoID, opts NodeListOptions)` |
+| `ListEdges(repoID, source, target, edgeType, opts)` | `ListEdges(repoID, opts EdgeListOptions)` |
+
+New option types added to `core/list.go`:
+
+```go
+type NodeListOptions struct {
+    Type string // filter by node type; empty means all
+    ListOptions
+}
+
+type EdgeListOptions struct {
+    Source string // filter by source ref; empty means all
+    Target string // filter by target ref; empty means all
+    Type   string // filter by edge type; empty means all
+    ListOptions
+}
+```
+
+**Files:** `core/list.go`, `core/archive.go`, `archive/local.go`, `archive/node_store.go`, `archive/edge_store.go`, `repo/handlers_node.go`, `repo/handlers_edge.go`
+
+### Correction 4: Implement file-based body storage for nodes
+
+The high-level concepts diagram specifies:
+- **Local archive:** "Store Node data as files"
+- **Remote archive:** "Store Node data in Object Storage"
+
+Node body content moves from SQLite `body TEXT` column to the filesystem at `{archive_path}/content/{node_id}`. The `body` column is removed from the `nodes` table. The `Node.Body` field in the domain model remains `json.RawMessage` — the archive implementation decides where to persist it.
+
+Storage layout:
+```
+{archive_path}/
+  .upspeak/
+    metadata.db           # SQLite — metadata, edges, config
+  content/
+    {node_id}             # Node body files
+```
+
+- `saveNode`: writes body to content file, metadata to SQLite (no body column)
+- `getNode`: reads metadata from SQLite, body from content file
+- `deleteNode`: removes SQLite row + content file
+- `saveBatchNodes`: writes content files + SQLite rows in transaction
+
+Nodes with empty/nil body produce no content file.
+
+**Files:** `archive/schema.go`, `archive/local.go`, `archive/node_store.go`, all `archive/*_test.go`
+
+### Correction 5: Restore high-level concepts diagram in README
+
+The Phase 1 commit removed the "High Level Concepts" section and diagram reference from README.md. Restore the diagram and the original writing style. Do not include project structure (ephemeral). Update content to reflect current plan state.
+
+**Files:** `README.md`
+
+### Correction 6: Phase 5 cross-repo graph note
+
+Update Phase 5 to note that graph traversal must support cross-repository queries, per the high-level concepts diagram which shows Graph as a layer that "queries across repositories".
+
+---
+
+## Phase 5 Addendum: Cross-Repository Graph Queries
+
+The high-level concepts diagram (`assets/high-level-concepts-0.1.png`) shows Graph as a distinct component that "queries across repositories". The graph traversal implementation in Phase 5 must account for this:
+
+- `TraverseGraph` should accept an optional `repoID` filter — when empty, traversal spans all repos accessible to the user
+- `SearchNodes` should support cross-repo search with repo filtering
+- `GraphResult` already contains nodes and edges from potentially multiple repos (each carries `RepoID`)
+
+This does not require structural changes to the Phase 5 plan — the existing `GraphOptions` type can be extended with a `RepoIDs []uuid.UUID` field when Phase 5 is implemented.
