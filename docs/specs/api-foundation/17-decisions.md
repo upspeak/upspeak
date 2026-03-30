@@ -43,3 +43,5 @@
 21. **Administrative events** — All CRUD operations on Sources, Sinks, Filters, Rules, Schedules, and Repos emit events, enabling rules to react to administrative changes.
 
 22. **JetStream subject migration** — New canonical format is `repo.{repo_id}.events.{EventType}` (singular, event-type segment). Dual-publish during transition from existing `repos.{id}.in/out` pattern.
+
+23. **NATS isolation, no abstraction** — All NATS code lives in a dedicated `natsbus/` module. No generic broker abstraction — JetStream features are used directly. Other modules don't import NATS packages. If NATS ever needs replacing, the blast radius is one module. See [Event Bus: NATS Isolation Strategy](18-event-bus-adapter.md).

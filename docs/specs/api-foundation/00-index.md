@@ -24,3 +24,4 @@ This document defines the complete API surface, internal architecture, and desig
 15. **[Event Types](15-events.md)** — Complete event catalogue
 16. **[Internal Architecture](16-architecture.md)** — Domain models, JetStream streams, Archive interface, module composition
 17. **[Design Decisions](17-decisions.md)** — Summary of all architectural decisions with rationale
+18. **[Event Bus: NATS Isolation](18-event-bus-adapter.md)** — NATS code isolated in dedicated module; no abstraction layer; alternatives considered
