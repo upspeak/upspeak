@@ -12,13 +12,17 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 - **NATS isolation**: All NATS code lives in `nats/` — no other package imports nats-io
 - **Local/remote archive split**: `core.Archive` interface supports both local (SQLite + files) and remote (Postgres + object storage) implementations
 - **Knowledge graph**: Nodes, Edges, Threads, and Annotations form a structured graph with UUID v7 identifiers and human-friendly short IDs
+- **Filter engine**: Reusable condition sets with 15 operators, dot-path field resolution, and AND/OR modes
+- **Job system**: Async job tracking via NATS JetStream JOBS stream with durable pull consumer
 
 **Key packages:**
 - `app/`: Micro-framework for composing modules, HTTP routing, and application lifecycle. NATS-unaware — receives Publisher/Subscriber interfaces via DI
-- `core/`: Domain models (Node, Edge, Thread, Annotation, User, Repository), Archive sub-interfaces, event types, identity system
+- `core/`: Domain models (Node, Edge, Thread, Annotation, Filter, Job, User, Repository), Archive sub-interfaces, event types, identity system
 - `archive/`: Local archive implementation (SQLite metadata + filesystem body storage). Implements `core.Archive`
 - `nats/`: NATS JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle. Isolated from all other packages
 - `repo/`: Repository CRUD and knowledge graph API module. Mounted at `/api/v1`
+- `filter/`: Filter condition evaluation engine and filter CRUD module. Mounted at `/api/v1`
+- `jobs/`: Job tracking, cancellation, and JetStream runner module. Mounted at `/api/v1`
 - `api/`: Response envelope, HTTP helpers, middleware (ETag, RequestID)
 
 ## Critical Rules
@@ -55,7 +59,7 @@ go test ./...
 
 All entities use **UUID v7** as primary key (time-ordered, via `google/uuid`). Each entity also carries a **short ID** — a human-friendly `{PREFIX}-{SEQ}` identifier:
 
-- `REPO-1`, `NODE-42`, `EDGE-15`, `THREAD-7`, `ANNO-3`
+- `REPO-1`, `NODE-42`, `EDGE-15`, `THREAD-7`, `ANNO-3`, `FILTER-2`, `JOB-109`
 - Short ID sequences are scoped: per-repo (nodes, edges, threads, annotations), per-user (repos), or global (jobs, schedules, users)
 - `core.NewID()` generates a UUID v7. `core.FormatShortID(prefix, seq)` formats a short ID
 - `core.ParseShortID(s)` extracts prefix and sequence number
@@ -72,6 +76,8 @@ type Archive interface {
     EdgeStore         // SaveEdge, SaveBatchEdges, GetEdge, DeleteEdge, ListEdges
     ThreadStore       // SaveThread, GetThread, DeleteThread, ListThreads, AddNodeToThread, RemoveNodeFromThread
     AnnotationStore   // SaveAnnotation, GetAnnotation, DeleteAnnotation, ListAnnotations
+    FilterStore       // SaveFilter, GetFilter, DeleteFilter, ListFilters, GetFilterReferences
+    JobStore          // SaveJob, GetJob, GetJobByShortID, ListJobs
     RefResolver       // ResolveRef — resolves short ID or UUID to (uuid, entityType, error)
 }
 ```
@@ -203,9 +209,9 @@ Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `
 
 The full API foundation is implemented in 6 phases. See `docs/specs/api-foundation/` for the complete spec and `docs/superpowers/plans/2026-03-30-api-foundation.md` for the implementation plan.
 
-**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass (archive interface alignment), NATS hardening pass
-**Next:** Phase 3 (filters + jobs)
-**After Phase 3:** Phases 4 (connectors + schedules), 5 (rules + search), 6 (real-time + sync) can proceed in parallel
+**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass, NATS hardening pass, Phase 3 (filters + jobs)
+**Next:** Phase 4 (connectors + schedules)
+**After Phase 4:** Phases 5 (rules + search) and 6 (real-time + sync) can proceed in parallel
 
 ## Common Pitfalls
 
@@ -219,3 +225,6 @@ The full API foundation is implemented in 6 phases. See `docs/specs/api-foundati
 8. **Batch methods don't take repoID** — Each entity in the batch already has `RepoID` set by the caller.
 9. **Use JetStream publish** — The publisher uses `js.Publish()`, not `nc.Publish()`. Never use `nc.Publish()` for subjects captured by JetStream streams.
 10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.
+11. **Filter delete checks references** — Before deleting a filter, call `GetFilterReferences()` and return 409 if any sources/sinks/rules reference it.
+12. **Jobs use global sequences** — Job short IDs (JOB-1, JOB-2) use `nextGlobalSequence`, not per-repo sequences. Job endpoints are at `/api/v1/jobs`, not under `/repos/`.
+13. **Filter engine is pure logic** — The `filter/` package contains both the engine (no HTTP) and the module. The engine is used by the filter test endpoint and will be used by rules (Phase 5) and connectors (Phase 4).

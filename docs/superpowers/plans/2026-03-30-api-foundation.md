@@ -1051,6 +1051,28 @@ All four gaps addressed in `feat/nats-hardening` branch:
 
 ---
 
+## Phase 3 Completion Notes
+
+Phase 3 (Filters + Jobs) implemented in `feat/phase3-filters-jobs` branch:
+
+**Filter system:**
+- Domain models: `core/filter.go` (Filter, Condition, ConditionResult, FilterTestResult)
+- Archive: `FilterStore` interface, SQLite schema, `archive/filter_store.go` implementation
+- Engine: `filter/engine.go` — pure logic, 15 operators, dot-path field resolution (incl. metadata arrays), AND/OR modes
+- Module: `filter/filter.go` — CRUD handlers at `/repos/{repo_ref}/filters`, test endpoint
+- Entity dispatch: repo module extended for filter GET/PUT/DELETE via flat URLs (FILTER-3)
+- Referential integrity: 409 on delete if referenced by sources/sinks/rules
+- Tests: 30+ engine tests (all operators, modes, edge cases), 6 archive store tests
+
+**Job system:**
+- Domain models: `core/job.go` (Job with status state machine)
+- Archive: `JobStore` interface, SQLite schema, `archive/job_store.go`, `GetJobByShortID` for global lookup
+- Module: `jobs/jobs.go` — list/get/cancel handlers at `/jobs`
+- Runner: `jobs/runner.go` — JetStream consumer on JOBS stream, type dispatch (stubbed for Phase 4), cancellation checks, InProgress heartbeat
+- Wiring: `main.go` creates JOBS stream, job-runner consumer, starts runner goroutine, stops before NATS drain
+
+---
+
 ## Known Gap: Social Features and Federation
 
 The high-level concepts diagram and spec vision describe Upspeak as "personal-first, federated knowledge infrastructure". The 6-phase plan delivers the personal-first foundation but defers social and federation features. This section documents what exists and what's missing.

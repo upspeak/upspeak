@@ -4,7 +4,7 @@ description: Use when working on the Upspeak codebase — implementing features,
 compatibility: Designed for Claude Code. Requires Go 1.25+, SQLite (mattn/go-sqlite3), google/uuid
 metadata:
   author: upspeak
-  version: "0.4"
+  version: "0.5"
 ---
 
 # Upspeak Development
@@ -107,8 +107,8 @@ Dependencies injected via setters, not constructor or handler params. `HTTPHandl
 | 2. Knowledge Graph | Done | Nodes, edges, threads, annotations, flat URLs |
 | Correction Pass | Done | Archive sub-interfaces, file-based body, signature cleanup |
 | NATS Hardening | Done | JetStream publish, consumers, JOBS stream, connection management |
-| 3. Filters + Jobs | Next | Filter CRUD + engine, job tracking, JOBS stream |
-| 4. Connectors + Schedules | Planned | Sources, sinks, repo connector, cron |
+| 3. Filters + Jobs | Done | Filter CRUD + engine, job tracking, NATS job runner |
+| 4. Connectors + Schedules | Next | Sources, sinks, repo connector, cron |
 | 5. Rules + Search | Planned | Rule engine, FTS5, graph traversal (cross-repo) |
 | 6. Real-time + Sync | Planned | WebSocket, multi-device sync, conflict resolution |
 
@@ -117,10 +117,12 @@ Full spec: `docs/specs/api-foundation/00-index.md` (18 files)
 
 ## Where to Find Things
 
-- **Domain models:** `core/core.go`, `core/repo.go`, `core/thread.go`, `core/annotation.go`
+- **Domain models:** `core/core.go`, `core/repo.go`, `core/thread.go`, `core/annotation.go`, `core/filter.go`, `core/job.go`
 - **Archive interface:** `core/archive.go` (sub-interfaces), `core/list.go` (option types)
-- **Local archive:** `archive/local.go` (facade), `archive/node_store.go`, `archive/edge_store.go`, etc.
+- **Local archive:** `archive/local.go` (facade), `archive/node_store.go`, `archive/edge_store.go`, `archive/filter_store.go`, `archive/job_store.go`
 - **HTTP handlers:** `repo/handlers_repo.go`, `repo/handlers_node.go`, `repo/handlers_entity.go` (flat URL dispatch)
+- **Filter module:** `filter/filter.go` (module + handlers), `filter/engine.go` (condition evaluation)
+- **Jobs module:** `jobs/jobs.go` (module + handlers), `jobs/runner.go` (JetStream consumer)
 - **API helpers:** `api/envelope.go`, `api/http.go`, `api/middleware.go`
 - **Event types:** `core/events.go`, `core/shared_types.go`
 - **Identity:** `core/identity.go` (NewID, FormatShortID, ParseShortID, prefixes)
