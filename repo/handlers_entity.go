@@ -125,7 +125,7 @@ func (m *Module) threadNodeDeleteHandler() http.HandlerFunc {
 }
 
 func (m *Module) getEntity(w http.ResponseWriter, r *http.Request, entityType, idStr string, repo *core.Repository) {
-	id := mustParseUUID(idStr)
+	id := safeParseUUID(idStr)
 
 	switch entityType {
 	case "node":
@@ -195,7 +195,7 @@ func (m *Module) patchEntity(w http.ResponseWriter, r *http.Request, entityType,
 }
 
 func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType, idStr string, repo *core.Repository) {
-	id := mustParseUUID(idStr)
+	id := safeParseUUID(idStr)
 	var err error
 
 	switch entityType {
@@ -220,13 +220,13 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// mustParseUUID parses a UUID string, panicking on failure.
-// Only use this after the string has been validated (e.g. from ResolveRef).
-func mustParseUUID(s string) uuid.UUID {
+// safeParseUUID parses a UUID string that has already been validated (e.g. from
+// ResolveRef). Returns uuid.Nil if parsing fails, which should not happen under
+// normal operation since callers only pass validated UUIDs.
+func safeParseUUID(s string) uuid.UUID {
 	id, err := uuid.Parse(s)
 	if err != nil {
-		// This should never happen if the caller validated the input.
-		panic("invalid UUID: " + s)
+		return uuid.Nil
 	}
 	return id
 }
