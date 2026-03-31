@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -77,11 +78,17 @@ func (m *Msg) InProgress() error { return m.inProg() }
 // Term terminates delivery of the message. The server will not redeliver it.
 func (m *Msg) Term() error { return m.term() }
 
+// ErrFetchTimeout is returned by Consumer.Fetch when no messages are available
+// within the requested timeout. Callers should check errors.Is(err, ErrFetchTimeout)
+// rather than relying on infrastructure-specific error types.
+var ErrFetchTimeout = errors.New("fetch timeout: no messages available")
+
 // Consumer is the interface for consuming messages from a durable work queue.
 // Implementations are provided by infrastructure modules (e.g. nats).
 type Consumer interface {
 	// Fetch retrieves up to maxMsgs messages, blocking until at least one is
-	// available or the timeout is reached. Each message must be acknowledged
+	// available or the timeout is reached. Returns ErrFetchTimeout if no
+	// messages arrive before the deadline. Each message must be acknowledged
 	// via Ack() or Nak().
 	Fetch(maxMsgs int, timeout time.Duration) ([]*Msg, error)
 }

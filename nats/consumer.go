@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,7 +29,10 @@ func NewConsumer(bus *Bus, subject, durable string) (app.Consumer, error) {
 func (c *consumer) Fetch(maxMsgs int, timeout time.Duration) ([]*app.Msg, error) {
 	msgs, err := c.sub.Fetch(maxMsgs, natsclient.MaxWait(timeout))
 	if err != nil {
-		return nil, err
+		if errors.Is(err, natsclient.ErrTimeout) {
+			return nil, app.ErrFetchTimeout
+		}
+		return nil, fmt.Errorf("consumer fetch failed: %w", err)
 	}
 
 	result := make([]*app.Msg, len(msgs))

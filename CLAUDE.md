@@ -213,7 +213,7 @@ The full API foundation is implemented in 6 phases. See `docs/specs/api-foundati
 4. **HTTP method patterns** — Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts.
 5. **Reserved paths** — Never mount modules at `/healthz` or `/readiness` (system endpoints).
 6. **NATS isolation** — Only the `nats/` package imports `github.com/nats-io/*`. All other packages use `app.Publisher`/`app.Subscriber`/`app.Consumer` interfaces.
-9. **Use JetStream publish** — The publisher uses `js.Publish()`, not `nc.Publish()`. Never use `nc.Publish()` for subjects captured by JetStream streams.
-10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.
 7. **Short IDs are immutable** — Once assigned, a short ID never changes. Sequences never reuse numbers.
 8. **Batch methods don't take repoID** — Each entity in the batch already has `RepoID` set by the caller.
+9. **Use JetStream publish** — The publisher uses `js.Publish()`, not `nc.Publish()`. Never use `nc.Publish()` for subjects captured by JetStream streams.
+10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.

@@ -1,11 +1,13 @@
 package nats
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	natsclient "github.com/nats-io/nats.go"
+	"github.com/upspeak/upspeak/app"
 )
 
 // setupTestBus creates an embedded NATS Bus for testing with a private
@@ -211,10 +213,10 @@ func TestConsumer_FetchAndAck(t *testing.T) {
 	}
 
 	// After ack on a WorkQueue stream, the message should be gone.
-	// Fetching again should timeout with no messages.
+	// Fetching again should return ErrFetchTimeout.
 	_, err = c.Fetch(1, 500*time.Millisecond)
-	if err == nil {
-		t.Error("expected timeout error on empty queue, got nil")
+	if !errors.Is(err, app.ErrFetchTimeout) {
+		t.Errorf("expected app.ErrFetchTimeout, got %v", err)
 	}
 }
 
