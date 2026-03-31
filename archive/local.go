@@ -38,7 +38,9 @@ func NewLocalArchive(path string) (*LocalArchive, error) {
 	}
 
 	dbPath := filepath.Join(upspeakDir, "metadata.db")
-	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	// Enable foreign keys, set a 5-second busy timeout to avoid SQLITE_BUSY under
+	// contention, and enable secure_delete to overwrite deleted data with zeroes.
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on&_busy_timeout=5000&_secure_delete=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
