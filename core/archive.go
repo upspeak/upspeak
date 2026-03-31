@@ -80,6 +80,7 @@ type FilterReference struct {
 type JobStore interface {
 	SaveJob(job *Job) error
 	GetJob(jobID uuid.UUID) (*Job, error)
+	GetJobByShortID(shortID string) (*Job, error)
 	ListJobs(opts JobListOptions) ([]Job, int, error)
 }
 

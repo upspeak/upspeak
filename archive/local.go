@@ -233,6 +233,10 @@ func (a *LocalArchive) GetJob(jobID uuid.UUID) (*core.Job, error) {
 	return a.getJob(jobID)
 }
 
+func (a *LocalArchive) GetJobByShortID(shortID string) (*core.Job, error) {
+	return a.getJobByShortID(shortID)
+}
+
 func (a *LocalArchive) ListJobs(opts core.JobListOptions) ([]core.Job, int, error) {
 	return a.listJobs(opts)
 }

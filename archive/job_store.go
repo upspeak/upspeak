@@ -80,6 +80,16 @@ func (a *LocalArchive) saveJob(job *core.Job) error {
 	return nil
 }
 
+// getJobByShortID retrieves a job by its short ID (e.g. "JOB-42").
+func (a *LocalArchive) getJobByShortID(shortID string) (*core.Job, error) {
+	row := a.db.QueryRow(`
+		SELECT id, short_id, repo_id, type, status, started_at, completed_at, result, error, created_by, created_at, updated_at
+		FROM jobs WHERE short_id = ?
+	`, shortID)
+
+	return scanJobFromSingleRow(row)
+}
+
 // getJob retrieves a job by UUID.
 func (a *LocalArchive) getJob(jobID uuid.UUID) (*core.Job, error) {
 	row := a.db.QueryRow(`
