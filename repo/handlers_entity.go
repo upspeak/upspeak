@@ -1,12 +1,15 @@
 package repo
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/api"
 	"github.com/upspeak/upspeak/core"
+	"github.com/upspeak/upspeak/filter"
 )
 
 // reservedSegments are collection and action path segments that take priority
@@ -89,6 +92,8 @@ func (m *Module) entitySubHandler() http.HandlerFunc {
 		case entityType == "thread" && sub == "publish" && r.Method == http.MethodPost:
 			// Stub for Phase 4.
 			api.WriteError(w, http.StatusNotImplemented, "not_implemented", "Thread publish is not yet implemented")
+		case entityType == "filter" && sub == "test" && r.Method == http.MethodPost:
+			m.testFilterViaFlatURL(w, r, entityID)
 		default:
 			api.WriteError(w, http.StatusNotFound, "not_found", "Sub-resource not found")
 		}
@@ -164,6 +169,15 @@ func (m *Module) getEntity(w http.ResponseWriter, r *http.Request, entityType, i
 		api.SetETag(w, annotation.Version)
 		api.WriteJSON(w, http.StatusOK, annotation)
 
+	case "filter":
+		filter, err := m.archive.GetFilter(id)
+		if err != nil {
+			api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
+			return
+		}
+		api.SetETag(w, filter.Version)
+		api.WriteJSON(w, http.StatusOK, filter)
+
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
 	}
@@ -179,6 +193,8 @@ func (m *Module) putEntity(w http.ResponseWriter, r *http.Request, entityType, i
 		m.updateThreadFromRequest(w, r, repo, idStr)
 	case "annotation":
 		m.updateAnnotationFromRequest(w, r, repo, idStr)
+	case "filter":
+		m.updateFilterFromRequest(w, r, repo, idStr)
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
 	}
@@ -194,6 +210,89 @@ func (m *Module) patchEntity(w http.ResponseWriter, r *http.Request, entityType,
 	}
 }
 
+// updateFilterFromRequest handles PUT on a filter via flat URL entity dispatch.
+func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request, _ *core.Repository, idStr string) {
+	id := safeParseUUID(idStr)
+
+	existing, err := m.archive.GetFilter(id)
+	if err != nil {
+		api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
+		return
+	}
+
+	// Check If-Match for optimistic concurrency.
+	expected := api.ParseIfMatch(r)
+	if expected == -1 {
+		api.WriteError(w, http.StatusBadRequest, "invalid_if_match", "Invalid If-Match header value")
+		return
+	}
+	if expected > 0 && expected != existing.Version {
+		api.WriteError(w, http.StatusPreconditionFailed, "version_conflict", "Entity has been modified by another request")
+		return
+	}
+
+	r = api.LimitedBody(w, r)
+	var req struct {
+		Name        string           `json:"name"`
+		Description string           `json:"description"`
+		Mode        core.FilterMode  `json:"mode"`
+		Conditions  []core.Condition `json:"conditions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if req.Name == "" {
+		api.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = core.FilterModeAll
+	}
+	if req.Mode != core.FilterModeAll && req.Mode != core.FilterModeAny {
+		api.WriteError(w, http.StatusBadRequest, "invalid_field", "mode must be 'all' or 'any'")
+		return
+	}
+
+	existing.Name = req.Name
+	existing.Description = req.Description
+	existing.Mode = req.Mode
+	existing.Conditions = req.Conditions
+
+	if err := m.archive.SaveFilter(existing); err != nil {
+		var conflict *core.VersionConflictError
+		if errors.As(err, &conflict) {
+			api.WriteError(w, http.StatusPreconditionFailed, "version_conflict", "Entity has been modified by another request")
+			return
+		}
+		api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to update filter")
+		return
+	}
+
+	api.SetETag(w, existing.Version)
+	api.WriteJSON(w, http.StatusOK, existing)
+}
+
+// testFilterViaFlatURL handles POST /repos/{repo_ref}/FILTER-3/test via entity sub dispatch.
+func (m *Module) testFilterViaFlatURL(w http.ResponseWriter, r *http.Request, filterID uuid.UUID) {
+	f, err := m.archive.GetFilter(filterID)
+	if err != nil {
+		api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
+		return
+	}
+
+	r = api.LimitedBody(w, r)
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	result := filter.Evaluate(f, payload)
+	api.WriteJSON(w, http.StatusOK, result)
+}
+
 func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType, idStr string, repo *core.Repository) {
 	id := safeParseUUID(idStr)
 	var err error
@@ -207,6 +306,19 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 		err = m.archive.DeleteThread(id)
 	case "annotation":
 		err = m.archive.DeleteAnnotation(id)
+	case "filter":
+		// Check referential integrity before deleting.
+		refs, refErr := m.archive.GetFilterReferences(id)
+		if refErr != nil {
+			api.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to check filter references")
+			return
+		}
+		if len(refs) > 0 {
+			api.WriteErrorWithDetails(w, http.StatusConflict, "referenced",
+				"Filter is referenced by other entities and cannot be deleted", refs)
+			return
+		}
+		err = m.archive.DeleteFilter(id)
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
 		return
