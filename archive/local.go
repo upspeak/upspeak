@@ -201,6 +201,42 @@ func (a *LocalArchive) ListAnnotations(repoID uuid.UUID, opts core.ListOptions) 
 	return a.listAnnotations(repoID, opts)
 }
 
+// --- core.FilterStore implementation ---
+
+func (a *LocalArchive) SaveFilter(filter *core.Filter) error {
+	return a.saveFilter(filter)
+}
+
+func (a *LocalArchive) GetFilter(filterID uuid.UUID) (*core.Filter, error) {
+	return a.getFilter(filterID)
+}
+
+func (a *LocalArchive) DeleteFilter(filterID uuid.UUID) error {
+	return a.deleteFilter(filterID)
+}
+
+func (a *LocalArchive) ListFilters(repoID uuid.UUID, opts core.FilterListOptions) ([]core.Filter, int, error) {
+	return a.listFilters(repoID, opts)
+}
+
+func (a *LocalArchive) GetFilterReferences(filterID uuid.UUID) ([]core.FilterReference, error) {
+	return a.getFilterReferences(filterID)
+}
+
+// --- core.JobStore implementation ---
+
+func (a *LocalArchive) SaveJob(job *core.Job) error {
+	return a.saveJob(job)
+}
+
+func (a *LocalArchive) GetJob(jobID uuid.UUID) (*core.Job, error) {
+	return a.getJob(jobID)
+}
+
+func (a *LocalArchive) ListJobs(opts core.JobListOptions) ([]core.Job, int, error) {
+	return a.listJobs(opts)
+}
+
 // --- core.RefResolver implementation ---
 
 func (a *LocalArchive) ResolveRef(repoID uuid.UUID, ref string) (uuid.UUID, string, error) {

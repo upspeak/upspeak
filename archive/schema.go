@@ -94,6 +94,40 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_repo_id ON annotations(repo_id);
 
+-- Filters.
+CREATE TABLE IF NOT EXISTS filters (
+	id          TEXT PRIMARY KEY,
+	short_id    TEXT NOT NULL,
+	repo_id     TEXT NOT NULL,
+	name        TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	mode        TEXT NOT NULL DEFAULT 'all',
+	conditions  TEXT NOT NULL DEFAULT '[]',
+	created_by  TEXT NOT NULL,
+	version     INTEGER NOT NULL DEFAULT 1,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_filters_repo_id ON filters(repo_id);
+
+-- Jobs.
+CREATE TABLE IF NOT EXISTS jobs (
+	id           TEXT PRIMARY KEY,
+	short_id     TEXT NOT NULL,
+	repo_id      TEXT NOT NULL,
+	type         TEXT NOT NULL,
+	status       TEXT NOT NULL DEFAULT 'pending',
+	started_at   TEXT,
+	completed_at TEXT,
+	result       TEXT,
+	error        TEXT,
+	created_by   TEXT NOT NULL,
+	created_at   TEXT NOT NULL,
+	updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_repo_id ON jobs(repo_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
 -- Per-repo sequences for entity short IDs.
 CREATE TABLE IF NOT EXISTS repo_sequences (
 	repo_id  TEXT NOT NULL,

@@ -47,6 +47,19 @@ type EdgeListOptions struct {
 	ListOptions
 }
 
+// FilterListOptions filters filters in list operations.
+type FilterListOptions struct {
+	ListOptions
+}
+
+// JobListOptions filters jobs in list operations.
+type JobListOptions struct {
+	Status string    // filter by job status; empty means all
+	Type   string    // filter by job type; empty means all
+	RepoID string    // filter by repo ref; empty means all
+	ListOptions
+}
+
 // SearchOptions provides structured search filters for nodes.
 type SearchOptions struct {
 	Type          []string          `json:"type"`

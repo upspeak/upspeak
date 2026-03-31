@@ -57,6 +57,32 @@ type AnnotationStore interface {
 	ListAnnotations(repoID uuid.UUID, opts ListOptions) ([]Annotation, int, error)
 }
 
+// FilterStore handles filter persistence.
+type FilterStore interface {
+	SaveFilter(filter *Filter) error
+	GetFilter(filterID uuid.UUID) (*Filter, error)
+	DeleteFilter(filterID uuid.UUID) error
+	ListFilters(repoID uuid.UUID, opts FilterListOptions) ([]Filter, int, error)
+	// GetFilterReferences returns entity type/ID pairs that reference the
+	// given filter (sources, sinks, rules). Used to enforce referential
+	// integrity on delete.
+	GetFilterReferences(filterID uuid.UUID) ([]FilterReference, error)
+}
+
+// FilterReference describes an entity that references a filter.
+type FilterReference struct {
+	EntityType string `json:"entity_type"` // "source", "sink", "rule"
+	EntityID   string `json:"entity_id"`
+	EntityName string `json:"entity_name"`
+}
+
+// JobStore handles job persistence.
+type JobStore interface {
+	SaveJob(job *Job) error
+	GetJob(jobID uuid.UUID) (*Job, error)
+	ListJobs(opts JobListOptions) ([]Job, int, error)
+}
+
 // RefResolver resolves entity references within a repository.
 type RefResolver interface {
 	// ResolveRef resolves a short ID (e.g. "NODE-42") or UUID string to the
@@ -74,5 +100,7 @@ type Archive interface {
 	EdgeStore
 	ThreadStore
 	AnnotationStore
+	FilterStore
+	JobStore
 	RefResolver
 }
