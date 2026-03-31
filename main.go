@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/archive"
+	"github.com/upspeak/upspeak/filter"
+	"github.com/upspeak/upspeak/jobs"
 	usnats "github.com/upspeak/upspeak/nats"
 	"github.com/upspeak/upspeak/repo"
 )
@@ -44,6 +47,13 @@ func main() {
 	repoModule := &repo.Module{}
 	repoModule.SetPublisher(bus.Publisher())
 
+	// Initialise filter module.
+	filterModule := &filter.Module{}
+	filterModule.SetPublisher(bus.Publisher())
+
+	// Initialise jobs module.
+	jobsModule := &jobs.Module{}
+
 	// Register modules.
 	if err := up.AddModule(archiveModule); err != nil {
 		slog.Error("Error adding archive module", "error", err)
@@ -55,6 +65,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := up.AddModuleOnPath(filterModule, "/api/v1"); err != nil {
+		slog.Error("Error adding filter module", "error", err)
+		os.Exit(1)
+	}
+
+	if err := up.AddModuleOnPath(jobsModule, "/api/v1"); err != nil {
+		slog.Error("Error adding jobs module", "error", err)
+		os.Exit(1)
+	}
+
 	// Initialise modules (calls Init, registers handlers, but does NOT start HTTP).
 	if err := up.InitModules(); err != nil {
 		slog.Error("Error initialising modules", "error", err)
@@ -62,7 +82,35 @@ func main() {
 	}
 
 	// Wire cross-module dependencies after Init but before HTTP starts.
-	repoModule.SetArchive(archiveModule.GetArchive())
+	a := archiveModule.GetArchive()
+	repoModule.SetArchive(a)
+	filterModule.SetArchive(a)
+	jobsModule.SetArchive(a)
+
+	// Set up NATS JetStream streams and consumers for job processing.
+	sm := usnats.NewStreamManager(bus)
+	if err := sm.CreateJobsStream(); err != nil {
+		slog.Error("Error creating JOBS stream", "error", err)
+		os.Exit(1)
+	}
+	cm := usnats.NewConsumerManager(bus)
+	if err := cm.CreateJobRunnerConsumer(); err != nil {
+		slog.Error("Error creating job-runner consumer", "error", err)
+		os.Exit(1)
+	}
+
+	// Create a JetStream consumer for the job runner.
+	jobConsumer, err := usnats.NewConsumer(bus, "jobs.>", usnats.ConsumerJobRunner)
+	if err != nil {
+		slog.Error("Error creating job consumer", "error", err)
+		os.Exit(1)
+	}
+	jobsModule.SetConsumer(jobConsumer)
+
+	// Start the job runner in a background goroutine.
+	runnerCtx, cancelRunner := context.WithCancel(context.Background())
+	runner := jobs.NewRunner(a, jobConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	go runner.Run(runnerCtx)
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {
@@ -76,6 +124,7 @@ func main() {
 	<-quit
 
 	slog.Info("Shutting down...")
+	cancelRunner() // Stop job runner before draining NATS.
 	if err := up.Stop(); err != nil {
 		slog.Error("Error stopping app", "error", err)
 		os.Exit(1)
