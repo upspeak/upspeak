@@ -116,7 +116,7 @@ func (m *Module) cancelJobHandler() http.HandlerFunc {
 		// Only pending or running jobs can be cancelled.
 		if job.Status != core.JobStatusPending && job.Status != core.JobStatusRunning {
 			api.WriteError(w, http.StatusConflict, "invalid_status",
-				"Job cannot be cancelled (status: "+string(job.Status)+")")
+				"Job cannot be cancelled in its current state")
 			return
 		}
 
@@ -155,9 +155,12 @@ func (m *Module) resolveJobByShortID(shortID string) (*core.Job, error) {
 	return m.archive.GetJobByShortID(shortID)
 }
 
-// CreateJob is a helper that other modules can use to create a job in the archive.
-// It generates a UUID and sets the initial status to pending.
-func CreateJob(archive core.Archive, repoID, createdBy uuid.UUID, jobType core.JobType) (*core.Job, error) {
+// CreateJob is a helper that other modules can use to create a job and publish
+// it to the JOBS JetStream stream. It generates a UUID, sets the initial status
+// to pending, persists to the archive, and publishes a message so the job runner
+// picks it up. Pass nil for pub if no publisher is available (job will be created
+// but not dispatched for execution).
+func CreateJob(archive core.Archive, pub app.Publisher, repoID, createdBy uuid.UUID, jobType core.JobType) (*core.Job, error) {
 	job := &core.Job{
 		ID:        core.NewID(),
 		RepoID:    repoID,
@@ -170,11 +173,15 @@ func CreateJob(archive core.Archive, repoID, createdBy uuid.UUID, jobType core.J
 		return nil, err
 	}
 
-	// Publish job to JOBS stream.
-	payload, _ := json.Marshal(job)
-	subject := "jobs." + string(jobType) + "." + job.ID.String()
-	_ = payload // Will be used when publisher is wired for job creation.
-	_ = subject
+	// Publish job to JOBS stream so the runner picks it up.
+	if pub != nil {
+		payload, err := json.Marshal(job)
+		if err != nil {
+			return job, nil // Job is saved but publish failed; runner won't pick it up.
+		}
+		subject := "jobs." + string(jobType) + "." + job.ID.String()
+		_ = pub.Publish(subject, payload) // Best-effort publish.
+	}
 
 	return job, nil
 }

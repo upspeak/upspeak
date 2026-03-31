@@ -229,10 +229,18 @@ func numericCmp(fieldVal any, condValue json.RawMessage) int {
 	return 0
 }
 
-// matchesOp applies a regex match.
+// maxRegexPatternLen is the maximum allowed regex pattern length to prevent
+// expensive compilation of very large automata.
+const maxRegexPatternLen = 256
+
+// matchesOp applies a regex match. Patterns longer than maxRegexPatternLen
+// are rejected to prevent resource exhaustion during DFA construction.
 func matchesOp(fieldVal any, condValue json.RawMessage) bool {
 	var pattern string
 	if err := json.Unmarshal(condValue, &pattern); err != nil {
+		return false
+	}
+	if len(pattern) > maxRegexPatternLen {
 		return false
 	}
 	re, err := regexp.Compile(pattern)

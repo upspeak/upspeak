@@ -73,14 +73,6 @@ type createFilterRequest struct {
 	Conditions  []core.Condition `json:"conditions"`
 }
 
-// updateFilterRequest is the expected JSON body for PUT on a filter.
-type updateFilterRequest struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Mode        core.FilterMode  `json:"mode"`
-	Conditions  []core.Condition `json:"conditions"`
-}
-
 // createFilterHandler handles POST /api/v1/repos/{repo_ref}/filters.
 func (m *Module) createFilterHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -204,31 +196,38 @@ func (m *Module) resolveRepo(w http.ResponseWriter, ref string) (*core.Repositor
 }
 
 // resolveFilter resolves a filter ref (short ID or UUID) within a repo.
+// Returns 404 if the filter does not exist or does not belong to the given repo.
 func (m *Module) resolveFilter(w http.ResponseWriter, repoID uuid.UUID, ref string) (*core.Filter, error) {
 	// Try as UUID first.
 	if id, err := uuid.Parse(ref); err == nil {
-		filter, err := m.archive.GetFilter(id)
-		if err != nil {
+		f, err := m.archive.GetFilter(id)
+		if err != nil || f.RepoID != repoID {
 			api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.New("filter not found in this repository")
 		}
-		return filter, nil
+		return f, nil
 	}
 
 	// Try as short ID via ResolveRef.
 	filterID, entityType, err := m.archive.ResolveRef(repoID, ref)
 	if err != nil || entityType != "filter" {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
-		return nil, errors.New("filter not found")
+		return nil, fmt.Errorf("filter not found: %w", err)
 	}
 
-	filter, err := m.archive.GetFilter(filterID)
-	if err != nil {
+	f, err := m.archive.GetFilter(filterID)
+	if err != nil || f.RepoID != repoID {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("filter not found in this repository")
 	}
 
-	return filter, nil
+	return f, nil
 }
 
 // publishEvent publishes an event to JetStream if a publisher is configured.
@@ -250,8 +249,16 @@ func (m *Module) publishEvent(repoID uuid.UUID, eventType core.EventType, data a
 }
 
 // validateConditions checks that all conditions have valid fields and operators.
-// validateConditions checks that all conditions have valid fields and operators.
+// maxConditions is the maximum number of conditions allowed per filter.
+const maxConditions = 50
+
+// validateConditions checks that all conditions have valid fields and operators
+// and enforces a maximum of maxConditions conditions per filter.
 func validateConditions(conditions []core.Condition) error {
+	if len(conditions) > maxConditions {
+		return fmt.Errorf("too many conditions: maximum is %d", maxConditions)
+	}
+
 	validOps := map[core.ConditionOp]bool{
 		core.OpEq: true, core.OpNeq: true,
 		core.OpContains: true, core.OpNotContains: true,

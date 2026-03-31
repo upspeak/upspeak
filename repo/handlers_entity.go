@@ -3,8 +3,8 @@ package repo
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/api"
@@ -170,13 +170,13 @@ func (m *Module) getEntity(w http.ResponseWriter, r *http.Request, entityType, i
 		api.WriteJSON(w, http.StatusOK, annotation)
 
 	case "filter":
-		filter, err := m.archive.GetFilter(id)
-		if err != nil {
+		f, err := m.archive.GetFilter(id)
+		if err != nil || f.RepoID != repo.ID {
 			api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
 			return
 		}
-		api.SetETag(w, filter.Version)
-		api.WriteJSON(w, http.StatusOK, filter)
+		api.SetETag(w, f.Version)
+		api.WriteJSON(w, http.StatusOK, f)
 
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
@@ -211,11 +211,11 @@ func (m *Module) patchEntity(w http.ResponseWriter, r *http.Request, entityType,
 }
 
 // updateFilterFromRequest handles PUT on a filter via flat URL entity dispatch.
-func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request, _ *core.Repository, idStr string) {
+func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, idStr string) {
 	id := safeParseUUID(idStr)
 
 	existing, err := m.archive.GetFilter(id)
-	if err != nil {
+	if err != nil || existing.RepoID != repo.ID {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
 		return
 	}
@@ -255,6 +255,12 @@ func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	// Validate conditions on update (same as create).
+	if err := validateFilterConditions(req.Conditions); err != nil {
+		api.WriteError(w, http.StatusBadRequest, "invalid_conditions", err.Error())
+		return
+	}
+
 	existing.Name = req.Name
 	existing.Description = req.Description
 	existing.Mode = req.Mode
@@ -270,8 +276,54 @@ func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	// Publish update event.
+	m.publishFilterEvent(repo.ID, core.EventFilterUpdated, existing)
+
 	api.SetETag(w, existing.Version)
 	api.WriteJSON(w, http.StatusOK, existing)
+}
+
+// validateFilterConditions checks that conditions have valid fields and operators,
+// and enforces a maximum of 50 conditions per filter.
+func validateFilterConditions(conditions []core.Condition) error {
+	const maxConditions = 50
+	if len(conditions) > maxConditions {
+		return fmt.Errorf("too many conditions: maximum is %d", maxConditions)
+	}
+
+	validOps := map[core.ConditionOp]bool{
+		core.OpEq: true, core.OpNeq: true,
+		core.OpContains: true, core.OpNotContains: true,
+		core.OpStartsWith: true, core.OpEndsWith: true,
+		core.OpIn: true, core.OpNotIn: true,
+		core.OpGt: true, core.OpLt: true,
+		core.OpGte: true, core.OpLte: true,
+		core.OpExists: true, core.OpNotExists: true,
+		core.OpMatches: true,
+	}
+
+	for i, c := range conditions {
+		if c.Field == "" {
+			return fmt.Errorf("condition %d: field is required", i)
+		}
+		if !validOps[c.Op] {
+			return fmt.Errorf("condition %d: invalid operator '%s'", i, c.Op)
+		}
+	}
+	return nil
+}
+
+// publishFilterEvent publishes a filter event if a publisher is configured.
+func (m *Module) publishFilterEvent(repoID uuid.UUID, eventType core.EventType, data any) {
+	if m.pub == nil {
+		return
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	subject := "repo." + repoID.String() + ".events." + string(eventType)
+	_ = m.pub.Publish(subject, payload)
 }
 
 // testFilterViaFlatURL handles POST /repos/{repo_ref}/FILTER-3/test via entity sub dispatch.
@@ -307,6 +359,12 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 	case "annotation":
 		err = m.archive.DeleteAnnotation(id)
 	case "filter":
+		// Verify filter belongs to this repo before deleting.
+		f, filterErr := m.archive.GetFilter(id)
+		if filterErr != nil || f.RepoID != repo.ID {
+			api.WriteError(w, http.StatusNotFound, "not_found", "Filter not found")
+			return
+		}
 		// Check referential integrity before deleting.
 		refs, refErr := m.archive.GetFilterReferences(id)
 		if refErr != nil {
@@ -314,11 +372,14 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 			return
 		}
 		if len(refs) > 0 {
-			api.WriteErrorWithDetails(w, http.StatusConflict, "referenced",
+			api.WriteErrorWithDetails(w, http.StatusConflict, "filter_in_use",
 				"Filter is referenced by other entities and cannot be deleted", refs)
 			return
 		}
 		err = m.archive.DeleteFilter(id)
+		if err == nil {
+			m.publishFilterEvent(repo.ID, core.EventFilterDeleted, f)
+		}
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
 		return
@@ -343,7 +404,3 @@ func safeParseUUID(s string) uuid.UUID {
 	return id
 }
 
-// isReservedSegment checks if a path segment is a reserved collection or action name.
-func isReservedSegment(s string) bool {
-	return reservedSegments[strings.ToLower(s)]
-}
