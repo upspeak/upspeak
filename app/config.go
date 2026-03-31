@@ -3,9 +3,12 @@ package app
 import (
 	"fmt"
 
-	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 )
+
+// defaultNATSURL is the default NATS server URL. This constant avoids importing
+// the nats-io package outside the nats/ package, preserving NATS isolation.
+const defaultNATSURL = "nats://127.0.0.1:4222"
 
 // Config defines the application configuration.
 type Config struct {
@@ -49,7 +52,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("nats.embedded", true)
 	v.SetDefault("nats.private", false)
 	v.SetDefault("nats.logging", true)
-	v.SetDefault("nats.url", nats.DefaultURL)
+	v.SetDefault("nats.url", defaultNATSURL)
 	v.SetDefault("http.port", 8080)
 
 	// Configuration file settings
