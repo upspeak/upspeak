@@ -55,14 +55,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start app (initialises modules, starts HTTP).
+	// Initialise modules (calls Init, registers handlers, but does NOT start HTTP).
+	if err := up.InitModules(); err != nil {
+		slog.Error("Error initialising modules", "error", err)
+		os.Exit(1)
+	}
+
+	// Wire cross-module dependencies after Init but before HTTP starts.
+	repoModule.SetArchive(archiveModule.GetArchive())
+
+	// Start HTTP server.
 	if err := up.Start(); err != nil {
 		slog.Error("Error starting app", "error", err)
 		os.Exit(1)
 	}
-
-	// Wire dependencies after modules are initialised.
-	repoModule.SetArchive(archiveModule.GetArchive())
 
 	// Wait for interrupt signal to gracefully shut down.
 	quit := make(chan os.Signal, 1)

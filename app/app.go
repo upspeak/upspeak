@@ -115,10 +115,11 @@ type App struct {
 	httpServer *http.Server
 	httpRouter *http.ServeMux
 	modules    map[string]moduleMount // Module name -> moduleMount
-	rootModule string                 // Track which module (if any) is at root
-	logger     *slog.Logger
-	ready      bool
-	readyLock  sync.RWMutex
+	rootModule   string                 // Track which module (if any) is at root
+	logger       *slog.Logger
+	ready        bool
+	readyLock    sync.RWMutex
+	modulesInited bool
 }
 
 // New creates a new App instance from a given Config.
@@ -279,9 +280,15 @@ func (a *App) buildHandlerPath(mountPath, handlerPath string) string {
 	return mountPath + handlerPath
 }
 
-// Start bootstraps all modules and starts the HTTP server.
-func (a *App) Start() error {
-	a.logger.Info("Starting app", "name", a.config.Name)
+// InitModules initialises all registered modules and registers their HTTP and
+// message handlers. Call this before Start() to ensure modules are fully wired
+// before the HTTP server begins accepting requests. Safe to call multiple times;
+// subsequent calls are no-ops.
+func (a *App) InitModules() error {
+	if a.modulesInited {
+		return nil
+	}
+	a.logger.Info("Initialising modules", "name", a.config.Name)
 
 	// Register all non-root modules first.
 	for name, mount := range a.modules {
@@ -305,6 +312,16 @@ func (a *App) Start() error {
 	a.logger.Info("Registering health and readiness endpoints")
 	a.httpRouter.HandleFunc("GET /healthz", a.healthzHandler)
 	a.httpRouter.HandleFunc("GET /readiness", a.readinessHandler)
+
+	a.modulesInited = true
+	return nil
+}
+
+// Start initialises modules (if not already done) and starts the HTTP server.
+func (a *App) Start() error {
+	if err := a.InitModules(); err != nil {
+		return err
+	}
 
 	// Start HTTP server.
 	serverErr := make(chan error, 1)
