@@ -1034,10 +1034,20 @@ Address Gaps 1-4 as a **NATS hardening pass** at the start of Phase 3, before im
 ### Resolution (completed)
 
 All four gaps addressed in `feat/nats-hardening` branch:
-- **Gap 1:** Publisher switched from `nc.Publish()` to `js.Publish()` for delivery confirmation. `app.Msg` and `app.Consumer` interfaces added for modules to consume JetStream messages without importing nats-io.
+- **Gap 1:** Publisher switched from `nc.Publish()` to `js.Publish()` for delivery confirmation. `app.Msg` and `app.Consumer` interfaces added for modules to consume JetStream messages without importing nats-io. `app.ErrFetchTimeout` sentinel error for timeout detection without nats-io imports.
 - **Gap 2:** `nats/consumers.go` created with ConsumerManager and job-runner consumer definition (AckExplicit, MaxDeliver=5, 30s AckWait). `nats/consumer.go` implements `app.Consumer` via pull subscription.
 - **Gap 3:** JOBS stream added (WorkQueue retention, `jobs.>` subjects). SCHEDULES stream deferred to Phase 4.
 - **Gap 4:** Connection hardening: Drain() instead of Close(), MaxReconnects(-1), ReconnectWait, ReconnectJitter, ConnectTimeout for external connections, handler callbacks for disconnect/reconnect/closed/error.
+
+**Additional hardening (security review):**
+- NATS dependencies updated: nats-server v2.12.2 → v2.12.6 (CVE-2026-29785, CVE-2026-27889), nats.go v1.47.0 → v1.50.0
+- NATS isolation violation in `app/config.go` fixed (was importing nats-io for `DefaultURL`)
+- HTTP request body size limits (1 MB) on all handlers
+- `mustParseUUID` panic replaced with `safeParseUUID` returning uuid.Nil
+- Security headers (X-Content-Type-Options, X-Frame-Options, Cache-Control) and ReadHeaderTimeout
+- SQLite busy timeout + secure delete
+- Race condition fixed: `InitModules()` separated from `Start()` for safe dependency wiring
+- Pagination offset capped at 10,000
 
 ---
 

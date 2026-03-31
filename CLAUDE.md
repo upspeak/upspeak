@@ -26,7 +26,7 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 1. **ALWAYS** follow patterns established in `app/` and `core/` packages
 2. **ALWAYS** add GoDoc-style comments for all public functions and types
 3. **ALWAYS** add comments for longer private methods (>20 lines)
-4. **ALWAYS** write documentation in en-IN (Indian English with British spelling: "organise", "behaviour", "colour")
+4. **ALWAYS** write documentation in en-IN (Indian English: "organise", "behaviour", "colour")
 5. **ALWAYS** make small commits per logical chunk of work, not monolithic batches
 6. **NEVER** respond with summaries unless explicitly requested
 7. **NEVER** skip error handling — check and handle all errors immediately
@@ -100,9 +100,11 @@ type Module interface {
 }
 ```
 
-Dependencies (archive, publisher) are injected via setter methods (e.g., `SetArchive()`, `SetPublisher()`), not via handler method parameters.
+Dependencies (archive, publisher, consumer) are injected via setter methods (e.g., `SetArchive()`, `SetPublisher()`), not via handler method parameters.
 
 **Module mounting:** All API modules mount at `/api/v1`. Multiple modules can share the same mount path — `http.ServeMux` resolves by method+path specificity.
+
+**Lifecycle:** Call `up.InitModules()` to initialise all modules, then wire cross-module dependencies (e.g. `SetArchive()`), then `up.Start()` to start HTTP. This avoids a race where handlers serve requests before dependencies are wired.
 
 ## NATS Communication
 

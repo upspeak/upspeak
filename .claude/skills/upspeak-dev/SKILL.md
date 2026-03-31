@@ -91,11 +91,13 @@ bus, err := usnats.Start(config.Name, natsConfig)
 up := app.New(*config)
 up.SetSubscriber(bus.Subscriber())
 repoModule.SetPublisher(bus.Publisher())
-repoModule.SetArchive(archiveModule.GetArchive())
 up.AddModuleOnPath(repoModule, "/api/v1")
+up.InitModules()  // Init + register handlers
+repoModule.SetArchive(archiveModule.GetArchive())  // Wire after Init
+up.Start()  // Start HTTP
 ```
 
-Dependencies injected via setters, not constructor or handler params. `HTTPHandlers()` and `MsgHandlers()` take no arguments.
+Dependencies injected via setters, not constructor or handler params. `HTTPHandlers()` and `MsgHandlers()` take no arguments. Always call `InitModules()` before wiring cross-module dependencies, then `Start()` for HTTP.
 
 ## Implementation Status
 
