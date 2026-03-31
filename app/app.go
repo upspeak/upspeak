@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/upspeak/upspeak/api"
 )
 
 // HTTPHandler defines an HTTP route handler for a module.
@@ -301,8 +303,9 @@ func (a *App) Start() error {
 	serverErr := make(chan error, 1)
 	go func() {
 		a.httpServer = &http.Server{
-			Addr:    fmt.Sprintf(":%d", a.config.HTTP.Port),
-			Handler: a.httpRouter,
+			Addr:              fmt.Sprintf(":%d", a.config.HTTP.Port),
+			Handler:           api.SecurityHeaders(api.RequestID(a.httpRouter)),
+			ReadHeaderTimeout: 10 * time.Second,
 		}
 		a.logger.Info("Starting HTTP server...", "port", a.config.HTTP.Port)
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
