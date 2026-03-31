@@ -26,6 +26,7 @@ func (m *Module) createNodeHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req createNodeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -78,6 +79,7 @@ func (m *Module) batchCreateNodesHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req batchCreateNodesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -154,7 +156,7 @@ func (m *Module) getNodeHandler(w http.ResponseWriter, nodeID core.Node) {
 
 // updateNodeHandler handles PUT /api/v1/repos/{repo_ref}/{node_ref}.
 func (m *Module) updateNodeFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, entityID string) {
-	node, err := m.archive.GetNode(mustParseUUID(entityID))
+	node, err := m.archive.GetNode(safeParseUUID(entityID))
 	if err != nil {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Node not found")
 		return
@@ -164,6 +166,7 @@ func (m *Module) updateNodeFromRequest(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
+	r = api.LimitedBody(w, r)
 	var req createNodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -192,7 +195,7 @@ func (m *Module) updateNodeFromRequest(w http.ResponseWriter, r *http.Request, r
 
 // patchNodeFromRequest handles PATCH on a node.
 func (m *Module) patchNodeFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, entityID string) {
-	node, err := m.archive.GetNode(mustParseUUID(entityID))
+	node, err := m.archive.GetNode(safeParseUUID(entityID))
 	if err != nil {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Node not found")
 		return
@@ -202,6 +205,7 @@ func (m *Module) patchNodeFromRequest(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
+	r = api.LimitedBody(w, r)
 	var patch struct {
 		Type        *string          `json:"type,omitempty"`
 		Subject     *string          `json:"subject,omitempty"`
@@ -248,7 +252,7 @@ func (m *Module) patchNodeFromRequest(w http.ResponseWriter, r *http.Request, re
 
 // nodeEdgesHandler handles GET /api/v1/repos/{repo_ref}/{node_ref}/edges.
 func (m *Module) nodeEdgesHandler(w http.ResponseWriter, r *http.Request, nodeID string) {
-	id := mustParseUUID(nodeID)
+	id := safeParseUUID(nodeID)
 	opts := core.EdgeQueryOptions{
 		Direction:   r.URL.Query().Get("direction"),
 		Type:        r.URL.Query().Get("type"),
@@ -269,7 +273,7 @@ func (m *Module) nodeEdgesHandler(w http.ResponseWriter, r *http.Request, nodeID
 
 // nodeAnnotationsHandler handles GET /api/v1/repos/{repo_ref}/{node_ref}/annotations.
 func (m *Module) nodeAnnotationsHandler(w http.ResponseWriter, r *http.Request, nodeID string) {
-	id := mustParseUUID(nodeID)
+	id := safeParseUUID(nodeID)
 	opts := core.AnnotationQueryOptions{
 		Motivation:  r.URL.Query().Get("motivation"),
 		ListOptions: api.ParsePagination(r),

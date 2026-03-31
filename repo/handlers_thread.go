@@ -23,6 +23,7 @@ func (m *Module) createThreadHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req createThreadRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -88,7 +89,7 @@ func (m *Module) listThreadsHandler() http.HandlerFunc {
 
 // updateThreadFromRequest handles PUT on a thread (updates metadata only).
 func (m *Module) updateThreadFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, entityID string) {
-	thread, err := m.archive.GetThread(mustParseUUID(entityID))
+	thread, err := m.archive.GetThread(safeParseUUID(entityID))
 	if err != nil {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Thread not found")
 		return
@@ -98,6 +99,7 @@ func (m *Module) updateThreadFromRequest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	r = api.LimitedBody(w, r)
 	var req struct {
 		Metadata []core.Metadata `json:"metadata"`
 	}
@@ -124,8 +126,9 @@ func (m *Module) updateThreadFromRequest(w http.ResponseWriter, r *http.Request,
 
 // addNodeToThreadHandler handles POST /api/v1/repos/{repo_ref}/{thread_ref}/nodes.
 func (m *Module) addNodeToThreadHandler(w http.ResponseWriter, r *http.Request, threadID string) {
-	tid := mustParseUUID(threadID)
+	tid := safeParseUUID(threadID)
 
+	r = api.LimitedBody(w, r)
 	var req struct {
 		NodeID   string `json:"node_id"`
 		EdgeType string `json:"edge_type"`
@@ -167,7 +170,7 @@ func (m *Module) addNodeToThreadHandler(w http.ResponseWriter, r *http.Request, 
 
 // removeNodeFromThreadHandler handles DELETE /api/v1/repos/{repo_ref}/{thread_ref}/{node_ref}.
 func (m *Module) removeNodeFromThreadHandler(w http.ResponseWriter, r *http.Request, threadID, nodeRef string) {
-	tid := mustParseUUID(threadID)
+	tid := safeParseUUID(threadID)
 
 	thread, err := m.archive.GetThread(tid)
 	if err != nil {

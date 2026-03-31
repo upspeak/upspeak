@@ -27,6 +27,7 @@ func (m *Module) createEdgeHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req createEdgeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -92,6 +93,7 @@ func (m *Module) batchCreateEdgesHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req batchCreateEdgesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -178,7 +180,7 @@ func (m *Module) listEdgesHandler() http.HandlerFunc {
 
 // updateEdgeFromRequest handles PUT on an edge.
 func (m *Module) updateEdgeFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, entityID string) {
-	edge, err := m.archive.GetEdge(mustParseUUID(entityID))
+	edge, err := m.archive.GetEdge(safeParseUUID(entityID))
 	if err != nil {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Edge not found")
 		return
@@ -188,6 +190,7 @@ func (m *Module) updateEdgeFromRequest(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
+	r = api.LimitedBody(w, r)
 	var req createEdgeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")

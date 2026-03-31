@@ -9,6 +9,18 @@ import (
 	"github.com/upspeak/upspeak/core"
 )
 
+// MaxRequestBodySize is the maximum allowed request body size (1 MB).
+// Requests exceeding this limit will receive a 413 Payload Too Large response.
+const MaxRequestBodySize = 1 << 20 // 1 MB
+
+// LimitedBody returns an http.MaxBytesReader-wrapped body that enforces
+// MaxRequestBodySize. Handlers should call this before decoding JSON to
+// prevent denial-of-service via oversized payloads.
+func LimitedBody(w http.ResponseWriter, r *http.Request) *http.Request {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
+	return r
+}
+
 // WriteJSON writes a single-resource success response with the given status code.
 func WriteJSON(w http.ResponseWriter, status int, data any) {
 	resp := Response{
@@ -86,7 +98,7 @@ func ParsePagination(r *http.Request) core.ListOptions {
 		}
 	}
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 10000 {
 			opts.Offset = n
 		}
 	}

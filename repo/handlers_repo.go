@@ -38,6 +38,7 @@ type patchRepoRequest struct {
 // createRepoHandler handles POST /api/v1/repos.
 func (m *Module) createRepoHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = api.LimitedBody(w, r)
 		var req createRepoRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -143,6 +144,7 @@ func (m *Module) updateRepoHandler() http.HandlerFunc {
 			return // error already written
 		}
 
+		r = api.LimitedBody(w, r)
 		var req updateRepoRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -203,6 +205,7 @@ func (m *Module) patchRepoHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req patchRepoRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")

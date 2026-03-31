@@ -24,6 +24,7 @@ func (m *Module) createAnnotationHandler() http.HandlerFunc {
 			return
 		}
 
+		r = api.LimitedBody(w, r)
 		var req createAnnotationRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
@@ -112,7 +113,7 @@ func (m *Module) listAnnotationsHandler() http.HandlerFunc {
 
 // updateAnnotationFromRequest handles PUT on an annotation.
 func (m *Module) updateAnnotationFromRequest(w http.ResponseWriter, r *http.Request, repo *core.Repository, entityID string) {
-	annotation, err := m.archive.GetAnnotation(mustParseUUID(entityID))
+	annotation, err := m.archive.GetAnnotation(safeParseUUID(entityID))
 	if err != nil {
 		api.WriteError(w, http.StatusNotFound, "not_found", "Annotation not found")
 		return
@@ -122,6 +123,7 @@ func (m *Module) updateAnnotationFromRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	r = api.LimitedBody(w, r)
 	var req struct {
 		Motivation string            `json:"motivation"`
 		Node       createNodeRequest `json:"node"`
