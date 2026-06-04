@@ -61,7 +61,7 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 go test -tags sqlite_fts5 ./...
 ```
 
-> **FTS5 build tag:** Full-text search requires the `sqlite_fts5` build tag (set via `BUILD_TAGS` in `build.sh`). Without it, search is silently disabled — `SearchNodes` returns empty results and the search endpoint returns `503`. Search tests skip when the tag is absent, so plain `go test ./...` still passes but does not exercise search.
+> **FTS5 build tag:** Search needs the `sqlite_fts5` tag (set via `BUILD_TAGS` in `build.sh`). Without it, search is disabled — `SearchNodes` returns empty, the endpoint returns `503`, and search tests skip (so plain `go test ./...` passes but skips search).
 
 ## Identity System
 
@@ -156,7 +156,7 @@ type Consumer interface {
 - Jobs: `JOBS` — WorkQueue retention, captures `jobs.>`
 - Schedules: `SCHEDULES` — WorkQueue retention, captures `schedules.trigger.>`
 
-> **Superseded:** The earlier per-repo `REPO_{repo_id}_EVENTS` design (`CreateRepoStream`) is not wired in the running app — it is retained only for tests. New event consumers should use the global `REPO_EVENTS` stream. Per-repo isolation would only be revisited if multi-tenancy/federation (currently deferred) returns; wiring `CreateRepoStream` now would conflict with `REPO_EVENTS` on subject overlap.
+> **Superseded:** The per-repo `REPO_{repo_id}_EVENTS` design (`CreateRepoStream`) is tests-only — new consumers use `REPO_EVENTS`. Wiring `CreateRepoStream` now would conflict with it on subject overlap.
 
 **Consumers:** Durable pull consumers with explicit ack. `job-runner` on JOBS, `schedule-runner` on SCHEDULES, and `rules-engine` on REPO_EVENTS (all MaxDeliver=5, AckWait=30s). Additional consumers (connector-repo, realtime-ws, sync-outbound) added as phases implement them.
 
@@ -176,52 +176,18 @@ type Consumer interface {
 
 ## Configuration
 
-**YAML-based:** See `upspeak.sample.yaml` for structure.
+YAML-based; see `upspeak.sample.yaml` for the full structure. First-time setup: `cp upspeak.sample.yaml upspeak.yaml`.
 
-```yaml
-name: "upspeak"
-nats:
-  embedded: true
-  private: false
-  logging: false
-http:
-  port: 8080
-modules:
-  archive:
-    enabled: true
-    config:
-      type: local
-      path: ./data
-```
+## Conventions
 
-**First-time setup:** `cp upspeak.sample.yaml upspeak.yaml`
-
-## File Organisation
-
-- **Logical separation**: One file per major concern or responsibility
-- **Type definitions first**: Define types before functions that use them
-- **Private helpers**: Use lowercase names for unexported functions
-- **Co-located tests**: Place `*_test.go` files alongside implementation
-- **New module location**: New modules are placed in the repo root directory
-
-## Naming Conventions
-
-**Types:** PascalCase — `Node`, `Edge`, `Repository`, `ErrorNotFound`, `HTTPHandler`
-**Functions:** PascalCase exported, camelCase private. Constructor pattern: `New<Type>()`
-**Variables:** Short for common patterns (`err`, `nc`, `ctx`, `w`, `r`). Single-letter receivers (`a *App`, `m *Module`)
-**Constants:** Typed constants with semantic grouping (`EventType`, `ConnectorType`, `JobStatus`)
-
-## Error Handling
-
-Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `ErrorSlugRedirect`). Wrap errors with `fmt.Errorf("context: %w", err)`. Check immediately.
+- **Files:** one file per concern; co-locate `*_test.go` with implementation; new modules go in the repo root.
+- **Naming:** PascalCase exported / camelCase private; constructors `New<Type>()`; single-letter receivers (`a *App`, `m *Module`); typed grouped constants (`EventType`, `JobStatus`).
+- **Errors:** custom domain error types (`ErrorNotFound`, `VersionConflictError`, `ErrorSlugRedirect`); wrap with `fmt.Errorf("context: %w", err)`; check immediately.
 
 ## Testing Standards
 
-- Table-driven tests for multiple cases
-- Meaningful test names: `TestSaveNode_VersionConflict`
-- Test error cases and edge conditions
-- Co-locate test files with implementation
-- Use `setupTestArchive(t)` pattern for archive tests (creates temp dir, auto-cleanup)
+- Table-driven tests with meaningful names (`TestSaveNode_VersionConflict`); cover error and edge cases.
+- Use `setupTestArchive(t)` for archive tests (temp dir, auto-cleanup).
 
 ## Implementation Plan
 
@@ -233,18 +199,12 @@ The full API foundation is implemented in 6 phases. See `docs/specs/api-foundati
 ## Common Pitfalls
 
 1. **Node body is NOT in SQLite** — Body content is stored as files at `{archive_path}/content/{node_id}`. The `nodes` table has no `body` column.
-2. **Sequence methods are private** — `nextRepoSequence`, `nextUserSequence`, `nextGlobalSequence` are package-private functions in `archive/sequences.go`, not on the `core.Archive` interface.
-3. **Module interface has no parameters** — `HTTPHandlers()` and `MsgHandlers()` take no arguments. Dependencies injected via setter methods.
-4. **HTTP method patterns** — Always specify HTTP method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts.
-5. **Reserved paths** — Never mount modules at `/healthz` or `/readiness` (system endpoints).
-6. **NATS isolation** — Only the `nats/` package imports `github.com/nats-io/*`. All other packages use `app.Publisher`/`app.Subscriber`/`app.Consumer` interfaces.
-7. **Short IDs are immutable** — Once assigned, a short ID never changes. Sequences never reuse numbers.
-8. **Batch methods don't take repoID** — Each entity in the batch already has `RepoID` set by the caller.
-9. **Use JetStream publish** — The publisher uses `js.Publish()`, not `nc.Publish()`. Never use `nc.Publish()` for subjects captured by JetStream streams.
-10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.
-11. **Filter delete checks references** — Before deleting a filter, call `GetFilterReferences()` and return 409 if any sources/sinks/rules reference it.
-12. **Jobs use global sequences** — Job short IDs (JOB-1, JOB-2) use `nextGlobalSequence`, not per-repo sequences. Job endpoints are at `/api/v1/jobs`, not under `/repos/`.
-13. **Filter engine is pure logic** — The `filter/` package contains both the engine (no HTTP) and the module. The engine is used by the filter test endpoint, the rules engine (trigger evaluation), and connectors.
-14. **All write handlers must publish events** — After a successful archive write, call `publishEvent()` with the appropriate event type. This is fire-and-forget (logged errors, never blocks the response).
-15. **Jobs carry params** — `CreateJob` takes a `json.RawMessage` params argument containing source_id, sink_id, or url. The runner uses params to determine what to execute.
-16. **If-Match required uses 428** — When If-Match header is mandatory for updates, return `http.StatusPreconditionRequired` (428) with code `if_match_required`.
+2. **Sequence methods are private** — `nextRepoSequence`, `nextUserSequence`, `nextGlobalSequence` live in `archive/sequences.go`, not on the `core.Archive` interface.
+3. **HTTP method patterns** — Always specify the method in route patterns (e.g., `GET /api/nodes`) to avoid conflicts.
+4. **Reserved paths** — Never mount modules at `/healthz` or `/readiness` (system endpoints).
+5. **Short IDs are immutable** — Once assigned, a short ID never changes. Sequences never reuse numbers.
+6. **Filter delete checks references** — Before deleting a filter, call `GetFilterReferences()` and return 409 if any sources/sinks/rules reference it.
+7. **Jobs use global sequences** — Job short IDs (JOB-1) use `nextGlobalSequence`; job endpoints are at `/api/v1/jobs`, not under `/repos/`.
+8. **All write handlers must publish events** — After a successful archive write, call `publishEvent()` (fire-and-forget; logged errors, never blocks the response).
+9. **Jobs carry params** — `CreateJob` takes a `json.RawMessage` of source_id, sink_id, or url; the runner uses it to determine what to execute.
+10. **If-Match required uses 428** — When If-Match is mandatory for an update, return `http.StatusPreconditionRequired` (428) with code `if_match_required`.
