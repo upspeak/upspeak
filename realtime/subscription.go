@@ -7,6 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// errSubscriptionLimit is returned when a connection exceeds maxSubscriptions.
+var errSubscriptionLimit = fmt.Errorf("subscription limit reached")
+
 // channelKind enumerates the channel families a client can subscribe to.
 type channelKind int
 
