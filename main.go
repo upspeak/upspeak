@@ -14,7 +14,9 @@ import (
 	"github.com/upspeak/upspeak/jobs"
 	usnats "github.com/upspeak/upspeak/nats"
 	"github.com/upspeak/upspeak/repo"
+	"github.com/upspeak/upspeak/rules"
 	"github.com/upspeak/upspeak/scheduler"
+	"github.com/upspeak/upspeak/search"
 )
 
 func main() {
@@ -64,6 +66,13 @@ func main() {
 	schedulerModule := &scheduler.Module{}
 	schedulerModule.SetPublisher(bus.Publisher())
 
+	// Initialise rules module.
+	rulesModule := &rules.Module{}
+	rulesModule.SetPublisher(bus.Publisher())
+
+	// Initialise search module.
+	searchModule := &search.Module{}
+
 	// Register modules.
 	if err := up.AddModule(archiveModule); err != nil {
 		slog.Error("Error adding archive module", "error", err)
@@ -95,6 +104,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := up.AddModuleOnPath(rulesModule, "/api/v1"); err != nil {
+		slog.Error("Error adding rules module", "error", err)
+		os.Exit(1)
+	}
+
+	if err := up.AddModuleOnPath(searchModule, "/api/v1"); err != nil {
+		slog.Error("Error adding search module", "error", err)
+		os.Exit(1)
+	}
+
 	// Initialise modules (calls Init, registers handlers, but does NOT start HTTP).
 	if err := up.InitModules(); err != nil {
 		slog.Error("Error initialising modules", "error", err)
@@ -108,6 +127,8 @@ func main() {
 	jobsModule.SetArchive(a)
 	connectorModule.SetArchive(a)
 	schedulerModule.SetArchive(a)
+	rulesModule.SetArchive(a)
+	searchModule.SetArchive(a)
 
 	// Set up NATS JetStream streams and consumers for job processing.
 	sm := usnats.NewStreamManager(bus)
@@ -153,6 +174,15 @@ func main() {
 	// Start the schedule runner in a background goroutine.
 	schedRunner := scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	go schedRunner.Run(runnerCtx)
+
+	// Start the rules engine. It subscribes to all repository events via core
+	// NATS fan-out; subscription happens here (after archive wiring) so its
+	// callback never runs before dependencies are set.
+	rulesEngine := rules.NewEngine(a, bus.Publisher(), bus.Subscriber(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if err := rulesEngine.Start(); err != nil {
+		slog.Error("Error starting rules engine", "error", err)
+		os.Exit(1)
+	}
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {
