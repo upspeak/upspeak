@@ -145,7 +145,7 @@ func (a *LocalArchive) listSchedules(opts core.ScheduleListOptions) ([]core.Sche
 
 	// Filter by repo_id in JSON action field
 	if opts.RepoID != "" {
-		where += ` AND json_unquote(json_extract(action, '$.repo_id')) = ?`
+		where += ` AND json_extract(action, '$.repo_id') = ?`
 		args = append(args, opts.RepoID)
 	}
 
@@ -157,7 +157,7 @@ func (a *LocalArchive) listSchedules(opts core.ScheduleListOptions) ([]core.Sche
 
 	// Filter by action type
 	if opts.ActionType != "" {
-		where += ` AND json_unquote(json_extract(action, '$.type')) = ?`
+		where += ` AND json_extract(action, '$.type') = ?`
 		args = append(args, opts.ActionType)
 	}
 
