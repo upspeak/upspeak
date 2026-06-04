@@ -44,9 +44,10 @@ func (m *Module) detectCycle(startRepoID, targetRepoID uuid.UUID) (bool, error) 
 func (m *Module) repoConnectorTargets(repoID uuid.UUID) ([]uuid.UUID, error) {
 	var targets []uuid.UUID
 
-	// Check sources.
+	// Check sources. Use a high limit to ensure all repo-type connectors are found.
 	sources, _, err := m.archive.ListSources(repoID, core.SourceListOptions{
-		Connector: core.ConnectorRepo,
+		Connector:   core.ConnectorRepo,
+		ListOptions: core.ListOptions{Limit: 1000, SortBy: "created_at", Order: "desc"},
 	})
 	if err != nil {
 		return nil, err
@@ -59,7 +60,8 @@ func (m *Module) repoConnectorTargets(repoID uuid.UUID) ([]uuid.UUID, error) {
 
 	// Check sinks.
 	sinks, _, err := m.archive.ListSinks(repoID, core.SinkListOptions{
-		Connector: core.ConnectorRepo,
+		Connector:   core.ConnectorRepo,
+		ListOptions: core.ListOptions{Limit: 1000, SortBy: "created_at", Order: "desc"},
 	})
 	if err != nil {
 		return nil, err
