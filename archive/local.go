@@ -241,6 +241,86 @@ func (a *LocalArchive) ListJobs(opts core.JobListOptions) ([]core.Job, int, erro
 	return a.listJobs(opts)
 }
 
+// --- core.ScheduleStore implementation ---
+
+func (a *LocalArchive) SaveSchedule(schedule *core.Schedule) error {
+	return a.saveSchedule(schedule)
+}
+
+func (a *LocalArchive) GetSchedule(scheduleID uuid.UUID) (*core.Schedule, error) {
+	return a.getSchedule(scheduleID)
+}
+
+func (a *LocalArchive) GetScheduleByShortID(shortID string) (*core.Schedule, error) {
+	return a.getScheduleByShortID(shortID)
+}
+
+func (a *LocalArchive) DeleteSchedule(scheduleID uuid.UUID) error {
+	return a.deleteSchedule(scheduleID)
+}
+
+func (a *LocalArchive) ListSchedules(opts core.ScheduleListOptions) ([]core.Schedule, int, error) {
+	return a.listSchedules(opts)
+}
+
+func (a *LocalArchive) GetEnabledSchedules() ([]core.Schedule, error) {
+	return a.getEnabledSchedules()
+}
+
+// --- core.SourceStore implementation ---
+
+func (a *LocalArchive) SaveSource(source *core.Source) error {
+	return a.saveSource(source)
+}
+
+func (a *LocalArchive) GetSource(sourceID uuid.UUID) (*core.Source, error) {
+	return a.getSource(sourceID)
+}
+
+func (a *LocalArchive) DeleteSource(sourceID uuid.UUID) error {
+	return a.deleteSource(sourceID)
+}
+
+func (a *LocalArchive) ListSources(repoID uuid.UUID, opts core.SourceListOptions) ([]core.Source, int, error) {
+	return a.listSources(repoID, opts)
+}
+
+// --- core.SinkStore implementation ---
+
+func (a *LocalArchive) SaveSink(sink *core.Sink) error {
+	return a.saveSink(sink)
+}
+
+func (a *LocalArchive) GetSink(sinkID uuid.UUID) (*core.Sink, error) {
+	return a.getSink(sinkID)
+}
+
+func (a *LocalArchive) DeleteSink(sinkID uuid.UUID) error {
+	return a.deleteSink(sinkID)
+}
+
+func (a *LocalArchive) ListSinks(repoID uuid.UUID, opts core.SinkListOptions) ([]core.Sink, int, error) {
+	return a.listSinks(repoID, opts)
+}
+
+// --- core.ConnectorHistoryStore implementation ---
+
+func (a *LocalArchive) RecordCollectionAttempt(record *core.CollectionRecord) error {
+	return a.recordCollectionAttempt(record)
+}
+
+func (a *LocalArchive) RecordPublishAttempt(record *core.PublishRecord) error {
+	return a.recordPublishAttempt(record)
+}
+
+func (a *LocalArchive) GetSourceHistory(sourceID uuid.UUID, opts core.ListOptions) ([]core.CollectionRecord, int, error) {
+	return a.getSourceHistory(sourceID, opts)
+}
+
+func (a *LocalArchive) GetSinkHistory(sinkID uuid.UUID, opts core.ListOptions) ([]core.PublishRecord, int, error) {
+	return a.getSinkHistory(sinkID, opts)
+}
+
 // --- core.RefResolver implementation ---
 
 func (a *LocalArchive) ResolveRef(repoID uuid.UUID, ref string) (uuid.UUID, string, error) {

@@ -157,12 +157,40 @@ func (a *LocalArchive) listFilters(repoID uuid.UUID, opts core.FilterListOptions
 }
 
 // getFilterReferences checks for entities (sources, sinks, rules) that reference
-// a filter. Returns an empty slice if no references exist. Since sources, sinks,
-// and rules are Phase 4+, this currently always returns an empty slice.
-func (a *LocalArchive) getFilterReferences(_ uuid.UUID) ([]core.FilterReference, error) {
-	// Phase 4+ will add source_filters, sink_filters, rule_filters tables.
-	// For now, filters have no referencing entities.
-	return nil, nil
+// a filter. Returns an empty slice if no references exist.
+func (a *LocalArchive) getFilterReferences(filterID uuid.UUID) ([]core.FilterReference, error) {
+	var refs []core.FilterReference
+	fID := filterID.String()
+
+	// Check sources that reference this filter.
+	rows, err := a.db.Query(`SELECT id, name FROM sources WHERE filter_ids LIKE ?`, "%"+fID+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to check source filter references: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("failed to scan source reference: %w", err)
+		}
+		refs = append(refs, core.FilterReference{EntityType: "source", EntityID: id, EntityName: name})
+	}
+
+	// Check sinks that reference this filter.
+	sinkRows, err := a.db.Query(`SELECT id, name FROM sinks WHERE filter_ids LIKE ?`, "%"+fID+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to check sink filter references: %w", err)
+	}
+	defer sinkRows.Close()
+	for sinkRows.Next() {
+		var id, name string
+		if err := sinkRows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("failed to scan sink reference: %w", err)
+		}
+		refs = append(refs, core.FilterReference{EntityType: "sink", EntityID: id, EntityName: name})
+	}
+
+	return refs, nil
 }
 
 // scanFilterFromSingleRow scans a filter from a *sql.Row (single-row query).

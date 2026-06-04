@@ -42,6 +42,8 @@ func (a *LocalArchive) resolveByUUID(repoID uuid.UUID, id uuid.UUID) (uuid.UUID,
 		{"threads", "thread"},
 		{"annotations", "annotation"},
 		{"filters", "filter"},
+		{"sources", "source"},
+		{"sinks", "sink"},
 	}
 
 	for _, t := range tables {
@@ -113,6 +115,10 @@ func entityTypeToTable(entityType string) (string, error) {
 		return "annotations", nil
 	case "filter":
 		return "filters", nil
+	case "source":
+		return "sources", nil
+	case "sink":
+		return "sinks", nil
 	default:
 		return "", fmt.Errorf("unsupported entity type for resolution: %s", entityType)
 	}

@@ -159,6 +159,87 @@ CREATE TABLE IF NOT EXISTS repo_slug_redirects (
 	PRIMARY KEY (old_slug, owner_id)
 );
 
+-- Sources.
+CREATE TABLE IF NOT EXISTS sources (
+	id               TEXT PRIMARY KEY,
+	short_id         TEXT NOT NULL,
+	repo_id          TEXT NOT NULL,
+	name             TEXT NOT NULL,
+	connector        TEXT NOT NULL,
+	config           TEXT NOT NULL DEFAULT '{}',
+	filter_ids       TEXT NOT NULL DEFAULT '[]',
+	filter_chain_mode TEXT NOT NULL DEFAULT 'all',
+	rate_limit       TEXT,
+	status           TEXT NOT NULL DEFAULT 'active',
+	version          INTEGER NOT NULL DEFAULT 1,
+	created_by       TEXT NOT NULL,
+	created_at       TEXT NOT NULL,
+	updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sources_repo_id ON sources(repo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_repo_short_id ON sources(repo_id, short_id);
+
+-- Sinks.
+CREATE TABLE IF NOT EXISTS sinks (
+	id               TEXT PRIMARY KEY,
+	short_id         TEXT NOT NULL,
+	repo_id          TEXT NOT NULL,
+	name             TEXT NOT NULL,
+	connector        TEXT NOT NULL,
+	config           TEXT NOT NULL DEFAULT '{}',
+	filter_ids       TEXT NOT NULL DEFAULT '[]',
+	filter_chain_mode TEXT NOT NULL DEFAULT 'all',
+	rate_limit       TEXT,
+	status           TEXT NOT NULL DEFAULT 'active',
+	version          INTEGER NOT NULL DEFAULT 1,
+	created_by       TEXT NOT NULL,
+	created_at       TEXT NOT NULL,
+	updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sinks_repo_id ON sinks(repo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sinks_repo_short_id ON sinks(repo_id, short_id);
+
+-- Collection history.
+CREATE TABLE IF NOT EXISTS collection_history (
+	id            TEXT PRIMARY KEY,
+	source_id     TEXT NOT NULL,
+	at            TEXT NOT NULL,
+	result        TEXT NOT NULL,
+	details       TEXT NOT NULL DEFAULT '{}',
+	error_message TEXT NOT NULL DEFAULT '',
+	duration_ms   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_collection_history_source ON collection_history(source_id, at DESC);
+
+-- Publish history.
+CREATE TABLE IF NOT EXISTS publish_history (
+	id            TEXT PRIMARY KEY,
+	sink_id       TEXT NOT NULL,
+	at            TEXT NOT NULL,
+	result        TEXT NOT NULL,
+	details       TEXT NOT NULL DEFAULT '{}',
+	error_message TEXT NOT NULL DEFAULT '',
+	duration_ms   INTEGER NOT NULL DEFAULT 0,
+	external_url  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_publish_history_sink ON publish_history(sink_id, at DESC);
+
+-- Schedules.
+CREATE TABLE IF NOT EXISTS schedules (
+	id         TEXT PRIMARY KEY,
+	short_id   TEXT NOT NULL UNIQUE,
+	name       TEXT NOT NULL,
+	cron       TEXT NOT NULL,
+	action     TEXT NOT NULL,
+	enabled    INTEGER NOT NULL DEFAULT 1,
+	next_run   TEXT,
+	last_run   TEXT,
+	version    INTEGER NOT NULL DEFAULT 1,
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
 -- Enable WAL mode for better concurrent read performance.
 PRAGMA journal_mode=WAL;
 `

@@ -48,7 +48,8 @@ func (cm *ConsumerManager) PullSubscribe(subject, durable string) (*nats.Subscri
 
 // Consumer names for use across the application.
 const (
-	ConsumerJobRunner = "job-runner"
+	ConsumerJobRunner      = "job-runner"
+	ConsumerScheduleRunner = "schedule-runner"
 )
 
 // CreateJobRunnerConsumer creates the durable pull consumer for async job
@@ -58,6 +59,20 @@ func (cm *ConsumerManager) CreateJobRunnerConsumer() error {
 	return cm.CreateConsumer(JobsStreamName, &nats.ConsumerConfig{
 		Durable:       ConsumerJobRunner,
 		FilterSubject: "jobs.>",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverAllPolicy,
+		MaxDeliver:    5,
+		AckWait:       30 * time.Second,
+	})
+}
+
+// CreateScheduleRunnerConsumer creates the durable pull consumer for schedule
+// trigger processing on the SCHEDULES stream. The schedule runner consumes
+// trigger messages and creates jobs for each fired schedule.
+func (cm *ConsumerManager) CreateScheduleRunnerConsumer() error {
+	return cm.CreateConsumer(SchedulesStreamName, &nats.ConsumerConfig{
+		Durable:       ConsumerScheduleRunner,
+		FilterSubject: "schedules.trigger.>",
 		AckPolicy:     nats.AckExplicitPolicy,
 		DeliverPolicy: nats.DeliverAllPolicy,
 		MaxDeliver:    5,

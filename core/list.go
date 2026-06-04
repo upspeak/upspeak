@@ -83,3 +83,25 @@ type GraphResult struct {
 	Nodes []Node `json:"nodes"`
 	Edges []Edge `json:"edges"`
 }
+
+// SourceListOptions filters sources in list operations.
+type SourceListOptions struct {
+	Connector ConnectorType  // filter by connector type; empty means all
+	Status    ResourceStatus // filter by status; empty means all
+	ListOptions
+}
+
+// SinkListOptions filters sinks in list operations.
+type SinkListOptions struct {
+	Connector ConnectorType  // filter by connector type; empty means all
+	Status    ResourceStatus // filter by status; empty means all
+	ListOptions
+}
+
+// ScheduleListOptions filters schedules in list operations.
+type ScheduleListOptions struct {
+	RepoID     string // filter by repo ref in action; empty means all
+	Enabled    *bool  // filter by enabled state; nil means all
+	ActionType string // filter by action type; empty means all
+	ListOptions
+}

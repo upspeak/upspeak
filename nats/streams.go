@@ -69,3 +69,22 @@ func (sm *StreamManager) CreateJobsStream() error {
 	}
 	return nil
 }
+
+// SchedulesStreamName is the name of the global SCHEDULES stream.
+const SchedulesStreamName = "SCHEDULES"
+
+// CreateSchedulesStream creates the global SCHEDULES stream with WorkQueue
+// retention. Messages are trigger notifications published by the scheduler tick
+// loop and consumed by the schedule runner. Subjects: schedules.trigger.>
+func (sm *StreamManager) CreateSchedulesStream() error {
+	_, err := sm.js.AddStream(&nats.StreamConfig{
+		Name:      SchedulesStreamName,
+		Subjects:  []string{"schedules.trigger.>"},
+		Retention: nats.WorkQueuePolicy,
+		Storage:   nats.FileStorage,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create SCHEDULES stream: %w", err)
+	}
+	return nil
+}

@@ -84,6 +84,40 @@ type JobStore interface {
 	ListJobs(opts JobListOptions) ([]Job, int, error)
 }
 
+// SourceStore handles source persistence.
+type SourceStore interface {
+	SaveSource(source *Source) error
+	GetSource(sourceID uuid.UUID) (*Source, error)
+	DeleteSource(sourceID uuid.UUID) error
+	ListSources(repoID uuid.UUID, opts SourceListOptions) ([]Source, int, error)
+}
+
+// SinkStore handles sink persistence.
+type SinkStore interface {
+	SaveSink(sink *Sink) error
+	GetSink(sinkID uuid.UUID) (*Sink, error)
+	DeleteSink(sinkID uuid.UUID) error
+	ListSinks(repoID uuid.UUID, opts SinkListOptions) ([]Sink, int, error)
+}
+
+// ConnectorHistoryStore handles collection and publish history persistence.
+type ConnectorHistoryStore interface {
+	RecordCollectionAttempt(record *CollectionRecord) error
+	RecordPublishAttempt(record *PublishRecord) error
+	GetSourceHistory(sourceID uuid.UUID, opts ListOptions) ([]CollectionRecord, int, error)
+	GetSinkHistory(sinkID uuid.UUID, opts ListOptions) ([]PublishRecord, int, error)
+}
+
+// ScheduleStore handles schedule persistence.
+type ScheduleStore interface {
+	SaveSchedule(schedule *Schedule) error
+	GetSchedule(scheduleID uuid.UUID) (*Schedule, error)
+	GetScheduleByShortID(shortID string) (*Schedule, error)
+	DeleteSchedule(scheduleID uuid.UUID) error
+	ListSchedules(opts ScheduleListOptions) ([]Schedule, int, error)
+	GetEnabledSchedules() ([]Schedule, error)
+}
+
 // RefResolver resolves entity references within a repository.
 type RefResolver interface {
 	// ResolveRef resolves a short ID (e.g. "NODE-42") or UUID string to the
@@ -103,5 +137,9 @@ type Archive interface {
 	AnnotationStore
 	FilterStore
 	JobStore
+	SourceStore
+	SinkStore
+	ConnectorHistoryStore
+	ScheduleStore
 	RefResolver
 }

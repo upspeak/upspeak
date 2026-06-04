@@ -9,10 +9,12 @@ import (
 
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/archive"
+	"github.com/upspeak/upspeak/connector"
 	"github.com/upspeak/upspeak/filter"
 	"github.com/upspeak/upspeak/jobs"
 	usnats "github.com/upspeak/upspeak/nats"
 	"github.com/upspeak/upspeak/repo"
+	"github.com/upspeak/upspeak/scheduler"
 )
 
 func main() {
@@ -54,6 +56,14 @@ func main() {
 	// Initialise jobs module.
 	jobsModule := &jobs.Module{}
 
+	// Initialise connector module.
+	connectorModule := &connector.Module{}
+	connectorModule.SetPublisher(bus.Publisher())
+
+	// Initialise scheduler module.
+	schedulerModule := &scheduler.Module{}
+	schedulerModule.SetPublisher(bus.Publisher())
+
 	// Register modules.
 	if err := up.AddModule(archiveModule); err != nil {
 		slog.Error("Error adding archive module", "error", err)
@@ -75,6 +85,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := up.AddModuleOnPath(connectorModule, "/api/v1"); err != nil {
+		slog.Error("Error adding connector module", "error", err)
+		os.Exit(1)
+	}
+
+	if err := up.AddModuleOnPath(schedulerModule, "/api/v1"); err != nil {
+		slog.Error("Error adding scheduler module", "error", err)
+		os.Exit(1)
+	}
+
 	// Initialise modules (calls Init, registers handlers, but does NOT start HTTP).
 	if err := up.InitModules(); err != nil {
 		slog.Error("Error initialising modules", "error", err)
@@ -86,6 +106,8 @@ func main() {
 	repoModule.SetArchive(a)
 	filterModule.SetArchive(a)
 	jobsModule.SetArchive(a)
+	connectorModule.SetArchive(a)
+	schedulerModule.SetArchive(a)
 
 	// Set up NATS JetStream streams and consumers for job processing.
 	sm := usnats.NewStreamManager(bus)
@@ -93,9 +115,17 @@ func main() {
 		slog.Error("Error creating JOBS stream", "error", err)
 		os.Exit(1)
 	}
+	if err := sm.CreateSchedulesStream(); err != nil {
+		slog.Error("Error creating SCHEDULES stream", "error", err)
+		os.Exit(1)
+	}
 	cm := usnats.NewConsumerManager(bus)
 	if err := cm.CreateJobRunnerConsumer(); err != nil {
 		slog.Error("Error creating job-runner consumer", "error", err)
+		os.Exit(1)
+	}
+	if err := cm.CreateScheduleRunnerConsumer(); err != nil {
+		slog.Error("Error creating schedule-runner consumer", "error", err)
 		os.Exit(1)
 	}
 
@@ -107,10 +137,22 @@ func main() {
 	}
 	jobsModule.SetConsumer(jobConsumer)
 
+	// Create a JetStream consumer for the schedule runner.
+	scheduleConsumer, err := usnats.NewConsumer(bus, "schedules.trigger.>", usnats.ConsumerScheduleRunner)
+	if err != nil {
+		slog.Error("Error creating schedule consumer", "error", err)
+		os.Exit(1)
+	}
+	schedulerModule.SetConsumer(scheduleConsumer)
+
 	// Start the job runner in a background goroutine.
 	runnerCtx, cancelRunner := context.WithCancel(context.Background())
 	runner := jobs.NewRunner(a, jobConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	go runner.Run(runnerCtx)
+
+	// Start the schedule runner in a background goroutine.
+	schedRunner := scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	go schedRunner.Run(runnerCtx)
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {
@@ -124,7 +166,7 @@ func main() {
 	<-quit
 
 	slog.Info("Shutting down...")
-	cancelRunner() // Stop job runner before draining NATS.
+	cancelRunner() // Stop job runner and schedule runner before draining NATS.
 	if err := up.Stop(); err != nil {
 		slog.Error("Error stopping app", "error", err)
 		os.Exit(1)
