@@ -15,6 +15,11 @@ type Event struct {
 	RepoID    uuid.UUID       `json:"repo_id"`
 	Payload   json.RawMessage `json:"payload"`
 	Timestamp time.Time       `json:"timestamp"`
+	// Hops counts how many rule-engine reaction steps produced this event. The
+	// originating (user-initiated) event has Hops 0; an event emitted as a
+	// consequence of a rule firing carries Hops+1. The rules engine refuses to
+	// act on events beyond a maximum hop count, bounding action cascades.
+	Hops int `json:"hops,omitempty"`
 }
 
 // Subject returns the canonical JetStream subject for this event.

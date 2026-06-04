@@ -1,7 +1,9 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,62 +14,116 @@ import (
 	"github.com/upspeak/upspeak/jobs"
 )
 
-// allRepoEventsSubject is the wildcard subject the engine subscribes to. It
-// captures every domain event from every repository: repo.{id}.events.{Type}.
-const allRepoEventsSubject = "repo.*.events.>"
+// maxRuleHops bounds how many chained rule-engine reactions a single originating
+// event may spawn. An event whose Hops count reaches this limit is dropped
+// without evaluation, breaking action cascades that would otherwise loop.
+const maxRuleHops = 5
 
-// Engine evaluates rules against domain events and executes their actions. It
-// subscribes to all repository events via core NATS fan-out (best-effort), loads
-// the active rules matching each event, evaluates their filter conditions, and
-// fires actions for matching rules.
+// fetchBatchSize and fetchTimeout control the durable consumer fetch loop.
+const (
+	fetchBatchSize = 10
+	fetchTimeout   = 5 * time.Second
+)
+
+// ackDecision is the disposition of a consumed event message.
+type ackDecision int
+
+const (
+	ackOK    ackDecision = iota // processed (or intentionally skipped): acknowledge
+	ackRetry                    // transient failure before side effects: redeliver
+	ackTerm                     // permanently undeliverable (poison): drop
+)
+
+// Engine evaluates rules against domain events and executes their actions. It is
+// a durable JetStream pull consumer on the global repository-events stream: it
+// fetches events with explicit acknowledgement, loads the active rules matching
+// each event, evaluates their filter conditions, and fires actions for matching
+// rules. Durability means events published while the engine is down are
+// delivered on restart rather than lost.
 //
-// The engine is started from main.go after archive wiring (not via the module's
-// MsgHandlers) so its callback never runs before dependencies are set.
+// The engine is run from main.go after archive wiring so its loop never executes
+// before dependencies are set.
 type Engine struct {
-	archive core.Archive
-	pub     app.Publisher
-	sub     app.Subscriber
-	logger  *slog.Logger
+	archive  core.Archive
+	pub      app.Publisher
+	consumer app.Consumer
+	logger   *slog.Logger
 }
 
 // NewEngine constructs a rules engine with its dependencies.
-func NewEngine(archive core.Archive, pub app.Publisher, sub app.Subscriber, logger *slog.Logger) *Engine {
-	return &Engine{archive: archive, pub: pub, sub: sub, logger: logger}
+func NewEngine(archive core.Archive, pub app.Publisher, consumer app.Consumer, logger *slog.Logger) *Engine {
+	return &Engine{archive: archive, pub: pub, consumer: consumer, logger: logger}
 }
 
-// Start subscribes the engine to all repository events. It returns an error if
-// the subscription cannot be established.
-func (e *Engine) Start() error {
-	if err := e.sub.Subscribe(allRepoEventsSubject, e.handleEvent); err != nil {
-		return fmt.Errorf("failed to subscribe rules engine: %w", err)
+// Run starts the engine's consume loop. It blocks until the context is cancelled.
+func (e *Engine) Run(ctx context.Context) {
+	e.logger.Info("Rules engine started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			e.logger.Info("Rules engine stopping")
+			return
+		default:
+		}
+
+		msgs, err := e.consumer.Fetch(fetchBatchSize, fetchTimeout)
+		if err != nil {
+			if errors.Is(err, app.ErrFetchTimeout) {
+				continue // No messages available, try again.
+			}
+			e.logger.Error("Rules engine fetch failed", "error", err)
+			continue
+		}
+
+		for _, msg := range msgs {
+			e.processMessage(msg)
+		}
 	}
-	e.logger.Info("Rules engine subscribed", "subject", allRepoEventsSubject)
-	return nil
 }
 
-// handleEvent processes a single domain event: it loads active rules for the
-// event type, evaluates their triggers, and fires matching rules. Errors are
-// logged rather than propagated, as event delivery is fire-and-forget.
-func (e *Engine) handleEvent(_ string, data []byte) {
+// processMessage dispatches a single event message and acknowledges it according
+// to the outcome: redeliver on transient failure (before any side effects),
+// terminate on a poison message, otherwise acknowledge.
+func (e *Engine) processMessage(msg *app.Msg) {
+	switch e.dispatch(msg.Data) {
+	case ackRetry:
+		_ = msg.Nak()
+	case ackTerm:
+		_ = msg.Term()
+	default:
+		_ = msg.Ack()
+	}
+}
+
+// dispatch processes a single domain event: it loads active rules for the event
+// type, evaluates their triggers, and fires matching rules. It returns the
+// acknowledgement disposition for the message.
+func (e *Engine) dispatch(data []byte) ackDecision {
 	var evt core.Event
 	if err := json.Unmarshal(data, &evt); err != nil {
 		e.logger.Error("Failed to unmarshal event", "error", err)
-		return
+		return ackTerm // Malformed envelope; redelivery cannot help.
 	}
 
-	// Ignore the engine's own administrative and operational meta-events to
-	// avoid reacting to rule lifecycle changes and self-triggering loops.
+	// Ignore the engine's own meta-events (rule lifecycle/RuleTriggered) and cap
+	// reaction cascades to avoid self-triggering loops.
 	if isMetaEvent(evt.Type) {
-		return
+		return ackOK
+	}
+	if evt.Hops >= maxRuleHops {
+		e.logger.Warn("Dropping event exceeding max rule hops", "event", evt.Type, "hops", evt.Hops)
+		return ackOK
 	}
 
 	rules, err := e.archive.GetActiveRulesForEvent(evt.RepoID, evt.Type)
 	if err != nil {
+		// Transient: no actions have run yet, so redeliver rather than drop.
 		e.logger.Error("Failed to load active rules", "repo_id", evt.RepoID, "event", evt.Type, "error", err)
-		return
+		return ackRetry
 	}
 	if len(rules) == 0 {
-		return
+		return ackOK
 	}
 
 	// Decode the event payload once into a generic map for filter evaluation and
@@ -79,7 +135,7 @@ func (e *Engine) handleEvent(_ string, data []byte) {
 	if len(evt.Payload) > 0 {
 		if err := json.Unmarshal(evt.Payload, &payload); err != nil {
 			e.logger.Error("Failed to unmarshal event payload", "event", evt.Type, "error", err)
-			return
+			return ackTerm // Malformed payload; redelivery cannot help.
 		}
 	}
 	normaliseEventPayload(payload)
@@ -87,6 +143,7 @@ func (e *Engine) handleEvent(_ string, data []byte) {
 	for i := range rules {
 		e.evaluateAndFire(&rules[i], &evt, payload)
 	}
+	return ackOK
 }
 
 // evaluateAndFire evaluates a single rule's trigger filters against the event
@@ -165,9 +222,9 @@ func (e *Engine) executeActions(rule *core.Rule, payload map[string]any) []core.
 func (e *Engine) executeAction(rule *core.Rule, action core.RuleAction, payload map[string]any) error {
 	switch action.Type {
 	case core.ActionCollect:
-		return e.enqueueJob(rule, core.JobCollect, action.Params)
+		return e.enqueueConnectorJob(rule, core.JobCollect, action.Params, "source_id", "source")
 	case core.ActionPublish:
-		return e.enqueueJob(rule, core.JobPublish, action.Params)
+		return e.enqueueConnectorJob(rule, core.JobPublish, action.Params, "sink_id", "sink")
 	case core.ActionWebhook:
 		return e.enqueueJob(rule, core.JobWebhook, action.Params)
 	case core.ActionEnrich:
@@ -179,6 +236,35 @@ func (e *Engine) executeAction(rule *core.Rule, action core.RuleAction, payload 
 	default:
 		return fmt.Errorf("unknown action type %q", action.Type)
 	}
+}
+
+// enqueueConnectorJob enqueues a collect/publish job, enforcing that the
+// referenced connector (source or sink) belongs to the rule's repository. It
+// resolves refField (a UUID or short ID) within the rule's repo, rejects any
+// reference that does not resolve to the expected entity type in that repo, and
+// rewrites the param to the canonical UUID so the job runner cannot be steered
+// at another repository's connector.
+func (e *Engine) enqueueConnectorJob(rule *core.Rule, jobType core.JobType, raw json.RawMessage, refField, expectedType string) error {
+	var params map[string]any
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return fmt.Errorf("invalid %s action params: %w", jobType, err)
+	}
+	ref, _ := params[refField].(string)
+	if ref == "" {
+		return fmt.Errorf("%s action requires %s", jobType, refField)
+	}
+
+	id, entityType, err := e.archive.ResolveRef(rule.RepoID, ref)
+	if err != nil || entityType != expectedType {
+		return fmt.Errorf("%s %q does not resolve to a %s in this repository", refField, ref, expectedType)
+	}
+	params[refField] = id.String()
+
+	resolved, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s job params: %w", jobType, err)
+	}
+	return e.enqueueJob(rule, jobType, resolved)
 }
 
 // enqueueJob creates an async job for an action, reusing the rule's repository
@@ -208,6 +294,8 @@ func (e *Engine) publishTriggered(rule *core.Rule, evt *core.Event, exec *core.R
 		e.logger.Error("Failed to create RuleTriggered event", "error", err)
 		return
 	}
+	// Propagate the hop count so any reaction chain is bounded by maxRuleHops.
+	outEvt.Hops = evt.Hops + 1
 	out, err := json.Marshal(outEvt)
 	if err != nil {
 		e.logger.Error("Failed to marshal RuleTriggered event", "error", err)

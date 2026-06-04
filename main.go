@@ -140,6 +140,10 @@ func main() {
 		slog.Error("Error creating SCHEDULES stream", "error", err)
 		os.Exit(1)
 	}
+	if err := sm.CreateRepoEventsStream(); err != nil {
+		slog.Error("Error creating REPO_EVENTS stream", "error", err)
+		os.Exit(1)
+	}
 	cm := usnats.NewConsumerManager(bus)
 	if err := cm.CreateJobRunnerConsumer(); err != nil {
 		slog.Error("Error creating job-runner consumer", "error", err)
@@ -147,6 +151,10 @@ func main() {
 	}
 	if err := cm.CreateScheduleRunnerConsumer(); err != nil {
 		slog.Error("Error creating schedule-runner consumer", "error", err)
+		os.Exit(1)
+	}
+	if err := cm.CreateRulesEngineConsumer(); err != nil {
+		slog.Error("Error creating rules-engine consumer", "error", err)
 		os.Exit(1)
 	}
 
@@ -175,14 +183,16 @@ func main() {
 	schedRunner := scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	go schedRunner.Run(runnerCtx)
 
-	// Start the rules engine. It subscribes to all repository events via core
-	// NATS fan-out; subscription happens here (after archive wiring) so its
-	// callback never runs before dependencies are set.
-	rulesEngine := rules.NewEngine(a, bus.Publisher(), bus.Subscriber(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if err := rulesEngine.Start(); err != nil {
-		slog.Error("Error starting rules engine", "error", err)
+	// Start the rules engine as a durable consumer on the REPO_EVENTS stream.
+	// Created after archive wiring so its loop never runs before dependencies are
+	// set; durable delivery means events are not lost across restarts.
+	rulesConsumer, err := usnats.NewConsumer(bus, usnats.RepoEventsSubject, usnats.ConsumerRulesEngine)
+	if err != nil {
+		slog.Error("Error creating rules-engine consumer subscription", "error", err)
 		os.Exit(1)
 	}
+	rulesEngine := rules.NewEngine(a, bus.Publisher(), rulesConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	go rulesEngine.Run(runnerCtx)
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {

@@ -11,17 +11,9 @@ import (
 	"github.com/upspeak/upspeak/core"
 )
 
-// mockSubscriber records the subjects it was asked to subscribe to.
-type mockSubscriber struct {
-	subjects []string
-}
-
-func (s *mockSubscriber) Subscribe(subject string, _ func(subject string, data []byte)) error {
-	s.subjects = append(s.subjects, subject)
-	return nil
-}
-
-// testEngine builds an Engine over the module's archive with a recording publisher.
+// testEngine builds an Engine over the module's archive with a recording
+// publisher. The consumer is nil: tests drive the engine via dispatch() directly
+// rather than through the fetch loop.
 func testEngine(m *Module, pub *mockPublisher) *Engine {
 	return NewEngine(m.archive, pub, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
@@ -74,25 +66,13 @@ func executionCount(t *testing.T, m *Module, ruleID uuid.UUID) int {
 	return total
 }
 
-func TestEngine_Start(t *testing.T) {
-	m, pub := setupTestModule(t)
-	sub := &mockSubscriber{}
-	e := NewEngine(m.archive, pub, sub, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := e.Start(); err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-	if len(sub.subjects) != 1 || sub.subjects[0] != allRepoEventsSubject {
-		t.Errorf("Expected subscription to %q, got %v", allRepoEventsSubject, sub.subjects)
-	}
-}
-
 func TestEngine_FiresMatchingRule(t *testing.T) {
 	m, pub := setupTestModule(t)
 	repo := createTestRepo(t, m)
 	rule := saveRule(t, m, repo, core.StatusActive, nil)
 	e := testEngine(m, pub)
 
-	e.handleEvent("", nodeCreatedEvent(t, repo.ID, "article"))
+	e.dispatch(nodeCreatedEvent(t, repo.ID, "article"))
 
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected 1 execution recorded, got %d", got)
@@ -119,13 +99,13 @@ func TestEngine_FilterMatchAndBlock(t *testing.T) {
 	e := testEngine(m, pub)
 
 	// Non-matching payload: filter blocks the rule.
-	e.handleEvent("", nodeCreatedEvent(t, repo.ID, "note"))
+	e.dispatch(nodeCreatedEvent(t, repo.ID, "note"))
 	if got := executionCount(t, m, rule.ID); got != 0 {
 		t.Fatalf("Expected 0 executions for blocked rule, got %d", got)
 	}
 
 	// Matching payload: filter passes, rule fires.
-	e.handleEvent("", nodeCreatedEvent(t, repo.ID, "article"))
+	e.dispatch(nodeCreatedEvent(t, repo.ID, "article"))
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected 1 execution after match, got %d", got)
 	}
@@ -137,7 +117,7 @@ func TestEngine_SkipsPausedRule(t *testing.T) {
 	rule := saveRule(t, m, repo, core.StatusPaused, nil)
 	e := testEngine(m, pub)
 
-	e.handleEvent("", nodeCreatedEvent(t, repo.ID, "article"))
+	e.dispatch(nodeCreatedEvent(t, repo.ID, "article"))
 	if got := executionCount(t, m, rule.ID); got != 0 {
 		t.Errorf("Expected paused rule not to fire, got %d executions", got)
 	}
@@ -151,7 +131,7 @@ func TestEngine_IgnoresMetaEvents(t *testing.T) {
 	evt, _ := core.NewEvent(core.EventRuleTriggered, repo.ID, map[string]any{"rule_id": core.NewID()})
 	data, _ := json.Marshal(evt)
 	// Should return early without panicking or publishing anything.
-	e.handleEvent("", data)
+	e.dispatch(data)
 	if len(pub.published) != 0 {
 		t.Errorf("Expected no publishes for meta-event, got %d", len(pub.published))
 	}

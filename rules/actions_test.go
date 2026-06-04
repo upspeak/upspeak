@@ -65,7 +65,7 @@ func TestEngine_EnrichAction(t *testing.T) {
 	rule := saveActionRule(t, m, repo, core.EventNodeCreated, nil,
 		core.RuleAction{Type: core.ActionEnrich, Params: json.RawMessage(`{"metadata_key":"priority","metadata_value":"high"}`)})
 
-	testEngine(m, pub).handleEvent("", eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: node}))
+	testEngine(m, pub).dispatch(eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: node}))
 
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected 1 execution, got %d", got)
@@ -87,7 +87,7 @@ func TestEngine_RelateAction_Edge(t *testing.T) {
 	rule := saveActionRule(t, m, repo, core.EventNodeCreated, nil,
 		core.RuleAction{Type: core.ActionRelate, Params: json.RawMessage(`{"target_node_id":"` + tgt.ID.String() + `","edge_type":"cite"}`)})
 
-	testEngine(m, pub).handleEvent("", eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: src}))
+	testEngine(m, pub).dispatch(eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: src}))
 
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected 1 execution, got %d", got)
@@ -114,7 +114,7 @@ func TestEngine_AnnotateAction(t *testing.T) {
 	rule := saveActionRule(t, m, repo, core.EventNodeCreated, nil,
 		core.RuleAction{Type: core.ActionAnnotate, Params: json.RawMessage(`{"motivation":"commenting","body":"a note","content_type":"text/plain"}`)})
 
-	testEngine(m, pub).handleEvent("", eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: node}))
+	testEngine(m, pub).dispatch(eventFor(t, core.EventNodeCreated, repo.ID, core.EventNodeCreatePayload{Node: node}))
 
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected 1 execution, got %d", got)
@@ -146,7 +146,7 @@ func TestEngine_FilterMatchesOnUpdateEvent(t *testing.T) {
 		core.RuleAction{Type: core.ActionWebhook, Params: json.RawMessage(`{"url":"https://example.test"}`)})
 
 	payload := core.EventNodeUpdatePayload{NodeID: node.ID, UpdatedNode: node}
-	testEngine(m, pub).handleEvent("", eventFor(t, core.EventNodeUpdated, repo.ID, payload))
+	testEngine(m, pub).dispatch(eventFor(t, core.EventNodeUpdated, repo.ID, payload))
 
 	if got := executionCount(t, m, rule.ID); got != 1 {
 		t.Fatalf("Expected rule to fire on update event with node.* filter, got %d executions", got)
@@ -161,7 +161,7 @@ func TestEngine_EnrichOnNonNodeEvent(t *testing.T) {
 
 	// An edge event carries no node, so the enrich action should error (recorded).
 	edge := &core.Edge{ID: core.NewID(), RepoID: repo.ID, Type: "cite", Source: core.NewID(), Target: core.NewID()}
-	testEngine(m, pub).handleEvent("", eventFor(t, core.EventEdgeCreated, repo.ID, core.EventEdgeCreatePayload{Edge: edge}))
+	testEngine(m, pub).dispatch(eventFor(t, core.EventEdgeCreated, repo.ID, core.EventEdgeCreatePayload{Edge: edge}))
 
 	execs, total, err := m.archive.ListRuleExecutions(rule.ID, core.DefaultListOptions())
 	if err != nil {

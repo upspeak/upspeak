@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/google/uuid"
 
@@ -339,6 +340,63 @@ func validateRule(name string, trigger core.RuleTrigger, actions []core.RuleActi
 		if !validActionTypes[action.Type] {
 			return fmt.Errorf("action %d: invalid action type '%s'", i, action.Type)
 		}
+		if err := validateActionParams(action); err != nil {
+			return fmt.Errorf("action %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// validateActionParams checks that an action's params carry the fields its type
+// requires. This is structural validation only; repository ownership of
+// referenced connectors is enforced by the engine at execution time.
+func validateActionParams(action core.RuleAction) error {
+	switch action.Type {
+	case core.ActionCollect:
+		return requireStringField(action.Params, "source_id")
+	case core.ActionPublish:
+		return requireStringField(action.Params, "sink_id")
+	case core.ActionWebhook:
+		var p struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(action.Params, &p); err != nil {
+			return fmt.Errorf("invalid webhook params: %w", err)
+		}
+		if p.URL == "" {
+			return errors.New("webhook action requires url")
+		}
+		if u, err := url.Parse(p.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			return errors.New("webhook url must be a valid http(s) URL")
+		}
+	case core.ActionEnrich:
+		return requireStringField(action.Params, "metadata_key")
+	case core.ActionRelate:
+		var p struct {
+			TargetNodeID   string `json:"target_node_id"`
+			TargetThreadID string `json:"target_thread_id"`
+		}
+		if err := json.Unmarshal(action.Params, &p); err != nil {
+			return fmt.Errorf("invalid relate params: %w", err)
+		}
+		if p.TargetNodeID == "" && p.TargetThreadID == "" {
+			return errors.New("relate action requires target_node_id or target_thread_id")
+		}
+	case core.ActionAnnotate:
+		return requireStringField(action.Params, "motivation")
+	}
+	return nil
+}
+
+// requireStringField verifies that raw is a JSON object with a non-empty string
+// value at the given field.
+func requireStringField(raw json.RawMessage, field string) error {
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("invalid params: %w", err)
+	}
+	if s, ok := m[field].(string); !ok || s == "" {
+		return fmt.Errorf("action requires %s", field)
 	}
 	return nil
 }
