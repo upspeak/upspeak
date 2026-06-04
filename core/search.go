@@ -24,6 +24,10 @@ type BrowseOptions struct {
 
 // SearchStore handles full-text search indexing and graph traversal.
 type SearchStore interface {
+	// FTSAvailable reports whether full-text search is operational. When false
+	// (the driver was built without FTS5), SearchNodes returns empty results
+	// rather than an error, so callers should surface a clear signal instead.
+	FTSAvailable() bool
 	IndexNode(nodeID uuid.UUID, repoID uuid.UUID, subject string, bodyText string) error
 	RemoveNodeIndex(nodeID uuid.UUID) error
 	SearchNodes(repoID uuid.UUID, query string, opts SearchOptions) ([]SearchResult, int, error)

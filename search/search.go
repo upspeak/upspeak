@@ -94,6 +94,14 @@ func (m *Module) searchHandler() http.HandlerFunc {
 			return
 		}
 
+		// Surface a clear signal when full-text search is disabled (driver built
+		// without FTS5) rather than returning an empty result set as if nothing
+		// matched.
+		if !m.archive.FTSAvailable() {
+			api.WriteError(w, http.StatusServiceUnavailable, "search_unavailable", "Full-text search is disabled on this server")
+			return
+		}
+
 		opts := core.SearchOptions{
 			Type:          req.Filters.Type,
 			CreatedAfter:  req.Filters.CreatedAfter,
