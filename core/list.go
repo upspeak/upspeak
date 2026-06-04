@@ -54,9 +54,9 @@ type FilterListOptions struct {
 
 // JobListOptions filters jobs in list operations.
 type JobListOptions struct {
-	Status string    // filter by job status; empty means all
-	Type   string    // filter by job type; empty means all
-	RepoID string    // filter by repo ref; empty means all
+	Status string // filter by job status; empty means all
+	Type   string // filter by job type; empty means all
+	RepoID string // filter by repo ref; empty means all
 	ListOptions
 }
 

@@ -15,7 +15,7 @@ type Filter struct {
 	RepoID      uuid.UUID   `json:"repo_id"`
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
-	Mode        FilterMode  `json:"mode"`       // "all" (AND) or "any" (OR)
+	Mode        FilterMode  `json:"mode"` // "all" (AND) or "any" (OR)
 	Conditions  []Condition `json:"conditions"`
 	CreatedBy   uuid.UUID   `json:"created_by"`
 	Version     int         `json:"version"`

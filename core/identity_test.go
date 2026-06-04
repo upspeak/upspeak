@@ -78,13 +78,13 @@ func TestParseShortID(t *testing.T) {
 		{"JOB-109", "JOB", 109, false},
 		{"USER-1", "USER", 1, false},
 		// Invalid cases.
-		{"INVALID-1", "", 0, true},   // Unknown prefix
-		{"NODE", "", 0, true},        // No sequence
-		{"NODE-0", "", 0, true},      // Zero sequence
-		{"NODE--1", "", 0, true},     // Negative sequence
-		{"NODE-abc", "", 0, true},    // Non-numeric sequence
-		{"", "", 0, true},            // Empty string
-		{"-1", "", 0, true},         // No prefix
+		{"INVALID-1", "", 0, true}, // Unknown prefix
+		{"NODE", "", 0, true},      // No sequence
+		{"NODE-0", "", 0, true},    // Zero sequence
+		{"NODE--1", "", 0, true},   // Negative sequence
+		{"NODE-abc", "", 0, true},  // Non-numeric sequence
+		{"", "", 0, true},          // Empty string
+		{"-1", "", 0, true},        // No prefix
 	}
 
 	for _, tt := range tests {
