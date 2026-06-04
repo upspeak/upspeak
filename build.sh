@@ -5,10 +5,15 @@
 
 set -e
 
+# Build tags. sqlite_fts5 compiles the SQLite driver with FTS5 support, which
+# the archive full-text search index requires. Without it, search silently
+# returns empty results.
+BUILD_TAGS="sqlite_fts5"
+
 # Build application binary
 build_app() {
     echo "Building binary..."
-    go build -o bin/upspeak
+    go build -tags "$BUILD_TAGS" -o bin/upspeak
     echo "  bin/upspeak ($(du -h bin/upspeak | cut -f1))"
 }
 
@@ -27,7 +32,7 @@ cleanup() {
 # Run tests
 run_tests() {
     echo "Running tests..."
-    go test ./...
+    go test -tags "$BUILD_TAGS" ./...
 }
 
 # Run in development mode
@@ -50,7 +55,7 @@ dev() {
     echo "API: http://localhost:8080/api/v1/"
     echo ""
 
-    go run main.go
+    go run -tags "$BUILD_TAGS" main.go
 }
 
 # Show help
