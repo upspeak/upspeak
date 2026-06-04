@@ -94,6 +94,13 @@ func isFTS5UnavailableError(err error) bool {
 	return strings.Contains(err.Error(), "no such module: fts5")
 }
 
+// FTSAvailable reports whether full-text search is operational. It is false when
+// the SQLite driver was built without FTS5 support, in which case SearchNodes
+// returns empty results rather than an error.
+func (a *LocalArchive) FTSAvailable() bool {
+	return a.ftsAvailable
+}
+
 // Close closes the database connection.
 func (a *LocalArchive) Close() error {
 	return a.db.Close()
