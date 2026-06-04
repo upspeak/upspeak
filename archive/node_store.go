@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,6 +53,9 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 			return fmt.Errorf("failed to write node body: %w", err)
 		}
 
+		// Index for full-text search if content is textual.
+		a.indexNodeForSearch(node)
+
 		return nil
 	}
 
@@ -86,6 +90,9 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 	if err := a.writeNodeBody(node.ID, node.Body); err != nil {
 		return fmt.Errorf("failed to write node body: %w", err)
 	}
+
+	// Re-index for full-text search if content is textual.
+	a.indexNodeForSearch(node)
 
 	return nil
 }
@@ -141,11 +148,13 @@ func (a *LocalArchive) saveBatchNodes(nodes []*core.Node) error {
 		return fmt.Errorf("failed to commit batch: %w", err)
 	}
 
-	// Write body content files after successful commit.
+	// Write body content files after successful commit, then index each node
+	// for full-text search (mirrors the single-node saveNode path).
 	for _, node := range nodes {
 		if err := a.writeNodeBody(node.ID, node.Body); err != nil {
 			return fmt.Errorf("failed to write node body for %s: %w", node.ID, err)
 		}
+		a.indexNodeForSearch(node)
 	}
 
 	return nil
@@ -175,6 +184,9 @@ func (a *LocalArchive) getNode(nodeID uuid.UUID) (*core.Node, error) {
 
 // deleteNode deletes a node by UUID, including its body content file.
 func (a *LocalArchive) deleteNode(nodeID uuid.UUID) error {
+	// Remove from FTS index before deletion.
+	_ = a.removeNodeIndex(nodeID)
+
 	result, err := a.db.Exec(`DELETE FROM nodes WHERE id = ?`, nodeID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete node: %w", err)
@@ -478,4 +490,31 @@ func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, met
 	}
 
 	return node, nil
+}
+
+// indexNodeForSearch indexes a node for full-text search. Only text content
+// types have their body indexed; non-text nodes are indexed by subject alone.
+// The body is taken from node.Body (already in memory at the call site) to
+// avoid a redundant filesystem read. Indexing errors are swallowed, as search
+// indexing is a best-effort secondary operation.
+func (a *LocalArchive) indexNodeForSearch(node *core.Node) {
+	if a == nil || !a.ftsAvailable {
+		return
+	}
+
+	// Only index body text for textual content.
+	bodyText := ""
+	if strings.HasPrefix(node.ContentType, "text/") && len(node.Body) > 0 {
+		// Body is stored as JSON (json.RawMessage). For text content it is
+		// typically a JSON string; unmarshal to a plain string when possible,
+		// otherwise fall back to the raw bytes.
+		var s string
+		if json.Unmarshal(node.Body, &s) == nil {
+			bodyText = s
+		} else {
+			bodyText = string(node.Body)
+		}
+	}
+
+	_ = a.indexNode(node.ID, node.RepoID, node.Subject, bodyText)
 }

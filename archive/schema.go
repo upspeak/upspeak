@@ -241,6 +241,49 @@ CREATE TABLE IF NOT EXISTS schedules (
 	updated_at TEXT NOT NULL
 );
 
+-- Rules.
+CREATE TABLE IF NOT EXISTS rules (
+	id         TEXT PRIMARY KEY,
+	short_id   TEXT NOT NULL,
+	repo_id    TEXT NOT NULL,
+	name       TEXT NOT NULL,
+	trigger    TEXT NOT NULL DEFAULT '{}',
+	actions    TEXT NOT NULL DEFAULT '[]',
+	status     TEXT NOT NULL DEFAULT 'active',
+	version    INTEGER NOT NULL DEFAULT 1,
+	created_by TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rules_repo_id ON rules(repo_id);
+CREATE INDEX IF NOT EXISTS idx_rules_repo_status ON rules(repo_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rules_short_id ON rules(repo_id, short_id);
+
+-- Rule execution history.
+CREATE TABLE IF NOT EXISTS rule_executions (
+	id               TEXT PRIMARY KEY,
+	rule_id          TEXT NOT NULL,
+	event_id         TEXT NOT NULL,
+	event_type       TEXT NOT NULL,
+	actions_executed TEXT NOT NULL DEFAULT '[]',
+	at               TEXT NOT NULL,
+	duration_ms      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_rule_executions_rule ON rule_executions(rule_id, at DESC);
+
 -- Enable WAL mode for better concurrent read performance.
 PRAGMA journal_mode=WAL;
+`
+
+// ftsSchemaSQL defines the FTS5 virtual table for full-text search.
+// This is applied separately from the main schema because FTS5 requires
+// the sqlite3 library to be compiled with SQLITE_ENABLE_FTS5.
+const ftsSchemaSQL = `
+-- Full-text search index for nodes.
+CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+	node_id UNINDEXED,
+	repo_id UNINDEXED,
+	subject,
+	body_text
+);
 `

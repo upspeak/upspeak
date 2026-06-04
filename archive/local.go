@@ -3,11 +3,13 @@ package archive
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/upspeak/upspeak/core"
 )
 
@@ -16,9 +18,10 @@ import (
 // content/ directory. This separation supports the local/remote archive split
 // defined in the high-level architecture.
 type LocalArchive struct {
-	path       string
-	contentDir string
-	db         *sql.DB
+	path         string
+	contentDir   string
+	db           *sql.DB
+	ftsAvailable bool
 }
 
 // NewLocalArchive creates a new LocalArchive at the specified path.
@@ -58,7 +61,37 @@ func NewLocalArchive(path string) (*LocalArchive, error) {
 // initSchema creates the database tables if they don't exist.
 func (a *LocalArchive) initSchema() error {
 	_, err := a.db.Exec(schemaSQL)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Apply FTS5 schema separately — it requires SQLite compiled with FTS5
+	// support (the sqlite_fts5 build tag). If the module is genuinely absent,
+	// degrade to empty search results rather than breaking the whole archive.
+	// Any other error (typo, disk, lock) is a real failure and is returned.
+	_, err = a.db.Exec(ftsSchemaSQL)
+	if err == nil {
+		a.ftsAvailable = true
+		return nil
+	}
+
+	if isFTS5UnavailableError(err) {
+		a.ftsAvailable = false
+		slog.Warn("FTS5 not available; full-text search is disabled. "+
+			"Rebuild with -tags sqlite_fts5 to enable search.", "error", err)
+		return nil
+	}
+
+	return fmt.Errorf("failed to create FTS5 schema: %w", err)
+}
+
+// isFTS5UnavailableError reports whether err indicates that the SQLite driver
+// was built without FTS5 support, as opposed to a genuine SQL failure.
+func isFTS5UnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "no such module: fts5")
 }
 
 // Close closes the database connection.
@@ -319,6 +352,58 @@ func (a *LocalArchive) GetSourceHistory(sourceID uuid.UUID, opts core.ListOption
 
 func (a *LocalArchive) GetSinkHistory(sinkID uuid.UUID, opts core.ListOptions) ([]core.PublishRecord, int, error) {
 	return a.getSinkHistory(sinkID, opts)
+}
+
+// --- core.RuleStore implementation ---
+
+func (a *LocalArchive) SaveRule(rule *core.Rule) error {
+	return a.saveRule(rule)
+}
+
+func (a *LocalArchive) GetRule(ruleID uuid.UUID) (*core.Rule, error) {
+	return a.getRule(ruleID)
+}
+
+func (a *LocalArchive) DeleteRule(ruleID uuid.UUID) error {
+	return a.deleteRule(ruleID)
+}
+
+func (a *LocalArchive) ListRules(repoID uuid.UUID, opts core.RuleListOptions) ([]core.Rule, int, error) {
+	return a.listRules(repoID, opts)
+}
+
+func (a *LocalArchive) GetActiveRulesForEvent(repoID uuid.UUID, eventType core.EventType) ([]core.Rule, error) {
+	return a.getActiveRulesForEvent(repoID, eventType)
+}
+
+func (a *LocalArchive) SaveRuleExecution(exec *core.RuleExecution) error {
+	return a.saveRuleExecution(exec)
+}
+
+func (a *LocalArchive) ListRuleExecutions(ruleID uuid.UUID, opts core.ListOptions) ([]core.RuleExecution, int, error) {
+	return a.listRuleExecutions(ruleID, opts)
+}
+
+// --- core.SearchStore implementation ---
+
+func (a *LocalArchive) IndexNode(nodeID uuid.UUID, repoID uuid.UUID, subject string, bodyText string) error {
+	return a.indexNode(nodeID, repoID, subject, bodyText)
+}
+
+func (a *LocalArchive) RemoveNodeIndex(nodeID uuid.UUID) error {
+	return a.removeNodeIndex(nodeID)
+}
+
+func (a *LocalArchive) SearchNodes(repoID uuid.UUID, query string, opts core.SearchOptions) ([]core.SearchResult, int, error) {
+	return a.searchNodes(repoID, query, opts)
+}
+
+func (a *LocalArchive) BrowseNodes(repoID uuid.UUID, opts core.BrowseOptions) ([]core.Node, int, error) {
+	return a.browseNodes(repoID, opts)
+}
+
+func (a *LocalArchive) TraverseGraph(repoID uuid.UUID, startNodeID uuid.UUID, depth int, opts core.GraphOptions) (*core.GraphResult, error) {
+	return a.traverseGraph(repoID, startNodeID, depth, opts)
 }
 
 // --- core.RefResolver implementation ---

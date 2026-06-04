@@ -118,6 +118,17 @@ type ScheduleStore interface {
 	GetEnabledSchedules() ([]Schedule, error)
 }
 
+// RuleStore handles rule persistence and execution history.
+type RuleStore interface {
+	SaveRule(rule *Rule) error
+	GetRule(ruleID uuid.UUID) (*Rule, error)
+	DeleteRule(ruleID uuid.UUID) error
+	ListRules(repoID uuid.UUID, opts RuleListOptions) ([]Rule, int, error)
+	GetActiveRulesForEvent(repoID uuid.UUID, eventType EventType) ([]Rule, error)
+	SaveRuleExecution(exec *RuleExecution) error
+	ListRuleExecutions(ruleID uuid.UUID, opts ListOptions) ([]RuleExecution, int, error)
+}
+
 // RefResolver resolves entity references within a repository.
 type RefResolver interface {
 	// ResolveRef resolves a short ID (e.g. "NODE-42") or UUID string to the
@@ -141,5 +152,7 @@ type Archive interface {
 	SinkStore
 	ConnectorHistoryStore
 	ScheduleStore
+	RuleStore
+	SearchStore
 	RefResolver
 }

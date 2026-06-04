@@ -190,6 +190,20 @@ func (a *LocalArchive) getFilterReferences(filterID uuid.UUID) ([]core.FilterRef
 		refs = append(refs, core.FilterReference{EntityType: "sink", EntityID: id, EntityName: name})
 	}
 
+	// Check rules that reference this filter in their trigger configuration.
+	ruleRows, err := a.db.Query(`SELECT id, name FROM rules WHERE json_extract(trigger, '$.filter_ids') LIKE ?`, "%"+fID+"%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to check rule filter references: %w", err)
+	}
+	defer ruleRows.Close()
+	for ruleRows.Next() {
+		var id, name string
+		if err := ruleRows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("failed to scan rule reference: %w", err)
+		}
+		refs = append(refs, core.FilterReference{EntityType: "rule", EntityID: id, EntityName: name})
+	}
+
 	return refs, nil
 }
 
