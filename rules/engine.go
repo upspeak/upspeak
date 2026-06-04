@@ -70,9 +70,11 @@ func (e *Engine) handleEvent(_ string, data []byte) {
 		return
 	}
 
-	// Decode the event payload once into a generic map for filter evaluation.
-	// The payload shape (e.g. {"node": {...}}) matches the dot-paths used by
-	// filter conditions, so it is passed to the filter engine unchanged.
+	// Decode the event payload once into a generic map for filter evaluation and
+	// action targeting. Created events nest the entity under a stable key (e.g.
+	// "node") that matches filter dot-paths; Updated/Patched events nest it under
+	// "updated_node". normaliseEventPayload aliases the latter to the former so a
+	// single rule filter (e.g. node.type) works across create and update triggers.
 	var payload map[string]any
 	if len(evt.Payload) > 0 {
 		if err := json.Unmarshal(evt.Payload, &payload); err != nil {
@@ -80,6 +82,7 @@ func (e *Engine) handleEvent(_ string, data []byte) {
 			return
 		}
 	}
+	normaliseEventPayload(payload)
 
 	for i := range rules {
 		e.evaluateAndFire(&rules[i], &evt, payload)
@@ -95,7 +98,7 @@ func (e *Engine) evaluateAndFire(rule *core.Rule, evt *core.Event, payload map[s
 	}
 
 	start := time.Now()
-	entries := e.executeActions(rule, evt, payload)
+	entries := e.executeActions(rule, payload)
 	duration := time.Since(start)
 
 	exec := &core.RuleExecution{
@@ -134,11 +137,11 @@ func (e *Engine) evaluateTrigger(rule *core.Rule, payload map[string]any) bool {
 // executeActions runs each of the rule's actions in order and returns an entry
 // describing the outcome of each. Action failures are recorded but do not stop
 // subsequent actions from running.
-func (e *Engine) executeActions(rule *core.Rule, evt *core.Event, payload map[string]any) []core.ActionExecutionEntry {
+func (e *Engine) executeActions(rule *core.Rule, payload map[string]any) []core.ActionExecutionEntry {
 	entries := make([]core.ActionExecutionEntry, 0, len(rule.Actions))
 	for _, action := range rule.Actions {
 		entry := core.ActionExecutionEntry{Type: action.Type, Result: "success"}
-		if err := e.executeAction(rule, action, evt, payload); err != nil {
+		if err := e.executeAction(rule, action, payload); err != nil {
 			entry.Result = "error"
 			entry.Error = err.Error()
 			e.logger.Error("Rule action failed", "rule_id", rule.ID, "action", action.Type, "error", err)
@@ -148,12 +151,18 @@ func (e *Engine) executeActions(rule *core.Rule, evt *core.Event, payload map[st
 	return entries
 }
 
-// executeAction dispatches a single action. The job-producing actions
-// (collect, publish, webhook) are enqueued through the job system, reusing its
-// async execution, retry, and history machinery — the action's Params are passed
-// straight through as the job params. Graph-mutating actions (enrich, relate,
-// annotate) are not yet implemented and record an explicit unsupported error.
-func (e *Engine) executeAction(rule *core.Rule, action core.RuleAction, _ *core.Event, _ map[string]any) error {
+// executeAction dispatches a single action. Job-producing actions (collect,
+// publish, webhook) are enqueued through the job system, reusing its async
+// execution, retry, and history machinery — the action's Params pass straight
+// through as the job params. Graph-mutating actions (enrich, relate, annotate)
+// operate on the triggering node and write directly to the archive.
+//
+// Graph-mutating actions deliberately do NOT publish downstream domain events:
+// without a loop/depth guard, re-publishing (e.g. a NodeUpdated from enrich)
+// could re-trigger the same rule. The RuleTriggered event still records that the
+// rule fired. Surfacing these writes to other consumers is a follow-up that
+// depends on loop prevention.
+func (e *Engine) executeAction(rule *core.Rule, action core.RuleAction, payload map[string]any) error {
 	switch action.Type {
 	case core.ActionCollect:
 		return e.enqueueJob(rule, core.JobCollect, action.Params)
@@ -161,8 +170,12 @@ func (e *Engine) executeAction(rule *core.Rule, action core.RuleAction, _ *core.
 		return e.enqueueJob(rule, core.JobPublish, action.Params)
 	case core.ActionWebhook:
 		return e.enqueueJob(rule, core.JobWebhook, action.Params)
-	case core.ActionEnrich, core.ActionRelate, core.ActionAnnotate:
-		return fmt.Errorf("action type %q is not yet implemented", action.Type)
+	case core.ActionEnrich:
+		return e.enrichNode(rule, payload, action.Params)
+	case core.ActionRelate:
+		return e.relateNode(rule, payload, action.Params)
+	case core.ActionAnnotate:
+		return e.annotateNode(rule, payload, action.Params)
 	default:
 		return fmt.Errorf("unknown action type %q", action.Type)
 	}
