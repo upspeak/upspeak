@@ -50,6 +50,7 @@ func (cm *ConsumerManager) PullSubscribe(subject, durable string) (*nats.Subscri
 const (
 	ConsumerJobRunner      = "job-runner"
 	ConsumerScheduleRunner = "schedule-runner"
+	ConsumerRulesEngine    = "rules-engine"
 )
 
 // CreateJobRunnerConsumer creates the durable pull consumer for async job
@@ -59,6 +60,21 @@ func (cm *ConsumerManager) CreateJobRunnerConsumer() error {
 	return cm.CreateConsumer(JobsStreamName, &nats.ConsumerConfig{
 		Durable:       ConsumerJobRunner,
 		FilterSubject: "jobs.>",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverAllPolicy,
+		MaxDeliver:    5,
+		AckWait:       30 * time.Second,
+	})
+}
+
+// CreateRulesEngineConsumer creates the durable pull consumer for the rules
+// engine on the global REPO_EVENTS stream. It receives every repository's domain
+// events with explicit acknowledgement, so events published while the engine is
+// down are delivered on restart rather than lost.
+func (cm *ConsumerManager) CreateRulesEngineConsumer() error {
+	return cm.CreateConsumer(RepoEventsStreamName, &nats.ConsumerConfig{
+		Durable:       ConsumerRulesEngine,
+		FilterSubject: RepoEventsSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
 		DeliverPolicy: nats.DeliverAllPolicy,
 		MaxDeliver:    5,

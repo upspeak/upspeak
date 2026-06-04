@@ -52,6 +52,29 @@ func (sm *StreamManager) DeleteRepoStream(repoID uuid.UUID) error {
 	return nil
 }
 
+// RepoEventsStreamName is the name of the global repository events stream.
+const RepoEventsStreamName = "REPO_EVENTS"
+
+// RepoEventsSubject captures every repository's domain events.
+const RepoEventsSubject = "repo.*.events.>"
+
+// CreateRepoEventsStream creates the global stream that captures all repository
+// domain events (repo.*.events.>) with Limits retention. A single global stream
+// — rather than one stream per repository — lets durable consumers such as the
+// rules engine subscribe to every repository's events with one consumer.
+func (sm *StreamManager) CreateRepoEventsStream() error {
+	_, err := sm.js.AddStream(&nats.StreamConfig{
+		Name:      RepoEventsStreamName,
+		Subjects:  []string{RepoEventsSubject},
+		Retention: nats.LimitsPolicy,
+		Storage:   nats.FileStorage,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create REPO_EVENTS stream: %w", err)
+	}
+	return nil
+}
+
 // JobsStreamName is the name of the global JOBS stream.
 const JobsStreamName = "JOBS"
 
