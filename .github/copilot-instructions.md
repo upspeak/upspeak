@@ -20,9 +20,11 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 - `core/`: Domain models, Archive sub-interfaces, event types, identity system
 - `archive/`: Local archive implementation (SQLite metadata + filesystem body storage)
 - `nats/`: NATS JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle
-- `repo/`: Repository CRUD and knowledge graph API module
+- `repo/`: Repository CRUD and knowledge graph API module. Publishes domain events after all writes
 - `filter/`: Filter condition evaluation engine and filter CRUD module
-- `jobs/`: Job tracking, cancellation, and JetStream runner module
+- `jobs/`: Job tracking, cancellation, and JetStream runner module. Executes collect/publish/webhook jobs
+- `connector/`: Source and sink CRUD, collect/publish triggers, rate limiting, cycle detection
+- `scheduler/`: Cron-based schedule management, tick loop, NATS trigger consumer
 - `api/`: Response envelope, HTTP helpers, middleware (ETag, RequestID)
 
 ## Critical Rules
@@ -135,3 +137,6 @@ Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `
 8. Use `Drain()` not `Close()` on NATS shutdown
 9. Before deleting a filter, check references with `GetFilterReferences()`
 10. Jobs and schedules use global sequences, not per-repo
+11. Repo module publishes events after all successful writes — fire-and-forget, never blocks response
+12. Job.Params is `json.RawMessage` — type-specific context (source_id, sink_id, url) passed at creation
+13. If-Match required → 428 Precondition Required (`if_match_required`); mismatch → 412 (`version_conflict`)

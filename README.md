@@ -48,7 +48,7 @@ See `docs/specs/api-foundation/` for the complete API specification.
 - [x] **Phase 1: Foundation** — Core domain models, UUID v7, NATS isolation, archive interface, repository CRUD, API envelope
 - [x] **Phase 2: Knowledge Graph** — Nodes, edges, threads, annotations, flat URL routing, optimistic concurrency
 - [x] **Phase 3: Filters + Jobs** — Filter CRUD, condition evaluation engine, job tracking, NATS job runner
-- [ ] **Phase 4: Connectors + Schedules** — Sources, sinks, collect endpoint, repo connectors, cron scheduling
+- [x] **Phase 4: Connectors + Schedules** — Sources, sinks, collect/publish actions, rate limiting, cron scheduling, job execution with history
 - [ ] **Phase 5: Rules + Search** — Rule engine, FTS5 search, graph traversal
 - [ ] **Phase 6: Real-time + Sync** — WebSocket events, multi-device sync, conflict resolution
 

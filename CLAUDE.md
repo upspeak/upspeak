@@ -17,12 +17,14 @@ Upspeak is a personal-first, federated knowledge infrastructure designed to coll
 
 **Key packages:**
 - `app/`: Micro-framework for composing modules, HTTP routing, and application lifecycle. NATS-unaware — receives Publisher/Subscriber interfaces via DI
-- `core/`: Domain models (Node, Edge, Thread, Annotation, Filter, Job, User, Repository), Archive sub-interfaces, event types, identity system
+- `core/`: Domain models (Node, Edge, Thread, Annotation, Filter, Job, Source, Sink, Schedule, User, Repository), Archive sub-interfaces, event types, identity system
 - `archive/`: Local archive implementation (SQLite metadata + filesystem body storage). Implements `core.Archive`
 - `nats/`: NATS JetStream infrastructure — embedded server, publisher, subscriber, stream lifecycle. Isolated from all other packages
-- `repo/`: Repository CRUD and knowledge graph API module. Mounted at `/api/v1`
+- `repo/`: Repository CRUD and knowledge graph API module. Publishes domain events after all writes. Mounted at `/api/v1`
 - `filter/`: Filter condition evaluation engine and filter CRUD module. Mounted at `/api/v1`
-- `jobs/`: Job tracking, cancellation, and JetStream runner module. Mounted at `/api/v1`
+- `jobs/`: Job tracking, cancellation, and JetStream runner module. Executes collect/publish/webhook jobs. Mounted at `/api/v1`
+- `connector/`: Source and sink CRUD, collect/publish triggers, rate limiting, cycle detection. Mounted at `/api/v1`
+- `scheduler/`: Cron-based schedule management, tick loop, NATS trigger consumer. Mounted at `/api/v1`
 - `api/`: Response envelope, HTTP helpers, middleware (ETag, RequestID)
 
 ## Critical Rules
@@ -71,14 +73,18 @@ All entities use **UUID v7** as primary key (time-ordered, via `google/uuid`). E
 
 ```go
 type Archive interface {
-    RepositoryStore   // SaveRepository, GetRepository, ListRepositories, DeleteRepository, slug management
-    NodeStore         // SaveNode, SaveBatchNodes, GetNode, DeleteNode, ListNodes, GetNodeEdges, GetNodeAnnotations
-    EdgeStore         // SaveEdge, SaveBatchEdges, GetEdge, DeleteEdge, ListEdges
-    ThreadStore       // SaveThread, GetThread, DeleteThread, ListThreads, AddNodeToThread, RemoveNodeFromThread
-    AnnotationStore   // SaveAnnotation, GetAnnotation, DeleteAnnotation, ListAnnotations
-    FilterStore       // SaveFilter, GetFilter, DeleteFilter, ListFilters, GetFilterReferences
-    JobStore          // SaveJob, GetJob, GetJobByShortID, ListJobs
-    RefResolver       // ResolveRef — resolves short ID or UUID to (uuid, entityType, error)
+    RepositoryStore        // SaveRepository, GetRepository, ListRepositories, DeleteRepository, slug management
+    NodeStore              // SaveNode, SaveBatchNodes, GetNode, DeleteNode, ListNodes, GetNodeEdges, GetNodeAnnotations
+    EdgeStore              // SaveEdge, SaveBatchEdges, GetEdge, DeleteEdge, ListEdges
+    ThreadStore            // SaveThread, GetThread, DeleteThread, ListThreads, AddNodeToThread, RemoveNodeFromThread
+    AnnotationStore        // SaveAnnotation, GetAnnotation, DeleteAnnotation, ListAnnotations
+    FilterStore            // SaveFilter, GetFilter, DeleteFilter, ListFilters, GetFilterReferences
+    JobStore               // SaveJob, GetJob, GetJobByShortID, ListJobs
+    SourceStore            // SaveSource, GetSource, DeleteSource, ListSources
+    SinkStore              // SaveSink, GetSink, DeleteSink, ListSinks
+    ConnectorHistoryStore  // RecordCollectionAttempt, RecordPublishAttempt, GetSourceHistory, GetSinkHistory
+    ScheduleStore          // SaveSchedule, GetSchedule, DeleteSchedule, ListSchedules, GetEnabledSchedules
+    RefResolver            // ResolveRef — resolves short ID or UUID to (uuid, entityType, error)
 }
 ```
 
@@ -209,9 +215,9 @@ Custom error types for domain errors (`ErrorNotFound`, `VersionConflictError`, `
 
 The full API foundation is implemented in 6 phases. See `docs/specs/api-foundation/` for the complete spec and `docs/superpowers/plans/2026-03-30-api-foundation.md` for the implementation plan.
 
-**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass, NATS hardening pass, Phase 3 (filters + jobs)
-**Next:** Phase 4 (connectors + schedules)
-**After Phase 4:** Phases 5 (rules + search) and 6 (real-time + sync) can proceed in parallel
+**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass, NATS hardening pass, Phase 3 (filters + jobs), Phase 4 (connectors + schedules)
+**Next:** Phase 5 (rules + search)
+**After Phase 5:** Phase 6 (real-time + sync) can proceed in parallel
 
 ## Common Pitfalls
 
@@ -227,4 +233,7 @@ The full API foundation is implemented in 6 phases. See `docs/specs/api-foundati
 10. **Use Drain() not Close()** — On shutdown, always `Drain()` the NATS connection to flush buffered messages.
 11. **Filter delete checks references** — Before deleting a filter, call `GetFilterReferences()` and return 409 if any sources/sinks/rules reference it.
 12. **Jobs use global sequences** — Job short IDs (JOB-1, JOB-2) use `nextGlobalSequence`, not per-repo sequences. Job endpoints are at `/api/v1/jobs`, not under `/repos/`.
-13. **Filter engine is pure logic** — The `filter/` package contains both the engine (no HTTP) and the module. The engine is used by the filter test endpoint and will be used by rules (Phase 5) and connectors (Phase 4).
+13. **Filter engine is pure logic** — The `filter/` package contains both the engine (no HTTP) and the module. The engine is used by the filter test endpoint and will be used by rules (Phase 5) and connectors.
+14. **All write handlers must publish events** — After a successful archive write, call `publishEvent()` with the appropriate event type. This is fire-and-forget (logged errors, never blocks the response).
+15. **Jobs carry params** — `CreateJob` takes a `json.RawMessage` params argument containing source_id, sink_id, or url. The runner uses params to determine what to execute.
+16. **If-Match required uses 428** — When If-Match header is mandatory for updates, return `http.StatusPreconditionRequired` (428) with code `if_match_required`.

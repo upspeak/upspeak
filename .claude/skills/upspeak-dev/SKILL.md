@@ -48,7 +48,7 @@ All entities: UUID v7 primary key, short ID (`NODE-42`), version (optimistic con
 ## core.Archive Sub-interfaces
 
 ```
-Archive = RepositoryStore + NodeStore + EdgeStore + ThreadStore + AnnotationStore + RefResolver
+Archive = RepositoryStore + NodeStore + EdgeStore + ThreadStore + AnnotationStore + FilterStore + JobStore + SourceStore + SinkStore + ConnectorHistoryStore + ScheduleStore + RefResolver
 ```
 
 Modules that only need node operations can accept `core.NodeStore` instead of the full `core.Archive`. Sequence methods (`nextRepoSequence` etc.) are package-private in `archive/` — never on the interface.
@@ -108,8 +108,8 @@ Dependencies injected via setters, not constructor or handler params. `HTTPHandl
 | Correction Pass | Done | Archive sub-interfaces, file-based body, signature cleanup |
 | NATS Hardening | Done | JetStream publish, consumers, JOBS stream, connection management |
 | 3. Filters + Jobs | Done | Filter CRUD + engine, job tracking, NATS job runner |
-| 4. Connectors + Schedules | Next | Sources, sinks, repo connector, cron |
-| 5. Rules + Search | Planned | Rule engine, FTS5, graph traversal (cross-repo) |
+| 4. Connectors + Schedules | Done | Sources, sinks, rate limiting, cycle detection, cron, job execution + history |
+| 5. Rules + Search | Next | Rule engine, FTS5, graph traversal (cross-repo) |
 | 6. Real-time + Sync | Planned | WebSocket, multi-device sync, conflict resolution |
 
 Full plan: `docs/superpowers/plans/2026-03-30-api-foundation.md`
@@ -117,17 +117,19 @@ Full spec: `docs/specs/api-foundation/00-index.md` (18 files)
 
 ## Where to Find Things
 
-- **Domain models:** `core/core.go`, `core/repo.go`, `core/thread.go`, `core/annotation.go`, `core/filter.go`, `core/job.go`
+- **Domain models:** `core/core.go`, `core/repo.go`, `core/thread.go`, `core/annotation.go`, `core/filter.go`, `core/job.go`, `core/schedule.go`
 - **Archive interface:** `core/archive.go` (sub-interfaces), `core/list.go` (option types)
-- **Local archive:** `archive/local.go` (facade), `archive/node_store.go`, `archive/edge_store.go`, `archive/filter_store.go`, `archive/job_store.go`
+- **Local archive:** `archive/local.go` (facade), `archive/node_store.go`, `archive/edge_store.go`, `archive/filter_store.go`, `archive/job_store.go`, `archive/source_store.go`, `archive/sink_store.go`, `archive/schedule_store.go`, `archive/connector_history_store.go`
 - **HTTP handlers:** `repo/handlers_repo.go`, `repo/handlers_node.go`, `repo/handlers_entity.go` (flat URL dispatch)
 - **Filter module:** `filter/filter.go` (module + handlers), `filter/engine.go` (condition evaluation)
-- **Jobs module:** `jobs/jobs.go` (module + handlers), `jobs/runner.go` (JetStream consumer)
+- **Jobs module:** `jobs/jobs.go` (module + handlers + CreateJob helper), `jobs/runner.go` (JetStream consumer + execute handlers)
+- **Connector module:** `connector/connector.go` (module), `connector/handlers_source.go`, `connector/handlers_sink.go`, `connector/handlers_collect.go`, `connector/ratelimit.go`, `connector/cycle.go`
+- **Scheduler module:** `scheduler/scheduler.go` (module), `scheduler/handlers.go`, `scheduler/runner.go` (tick + consume loops), `scheduler/cron.go` (parser)
 - **API helpers:** `api/envelope.go`, `api/http.go`, `api/middleware.go`
 - **Event types:** `core/events.go`, `core/shared_types.go`
 - **Identity:** `core/identity.go` (NewID, FormatShortID, ParseShortID, prefixes)
 - **Schema:** `archive/schema.go` (SQLite DDL)
 - **NATS bus:** `nats/nats.go` (Bus, connection), `nats/publisher.go`, `nats/subscriber.go`
-- **NATS streams:** `nats/streams.go` (repo events, JOBS)
+- **NATS streams:** `nats/streams.go` (repo events, JOBS, SCHEDULES)
 - **NATS consumers:** `nats/consumers.go` (manager, definitions), `nats/consumer.go` (app.Consumer impl)
 - **High-level diagram:** `assets/high-level-concepts-0.1.png`
