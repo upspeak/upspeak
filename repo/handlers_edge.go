@@ -75,6 +75,8 @@ func (m *Module) createEdgeHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventEdgeCreated, core.EventEdgeCreatePayload{Edge: edge})
+
 		api.SetETag(w, edge.Version)
 		api.WriteJSON(w, http.StatusCreated, edge)
 	}
@@ -143,6 +145,10 @@ func (m *Module) batchCreateEdgesHandler() http.HandlerFunc {
 		if err := m.archive.SaveBatchEdges(edges); err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to create edges")
 			return
+		}
+
+		for _, edge := range edges {
+			m.publishEvent(repo.ID, core.EventEdgeCreated, core.EventEdgeCreatePayload{Edge: edge})
 		}
 
 		result := map[string]any{
@@ -214,6 +220,8 @@ func (m *Module) updateEdgeFromRequest(w http.ResponseWriter, r *http.Request, r
 		api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to update edge")
 		return
 	}
+
+	m.publishEvent(edge.RepoID, core.EventEdgeUpdated, core.EventEdgeUpdatePayload{EdgeID: edge.ID, UpdatedEdge: edge})
 
 	api.SetETag(w, edge.Version)
 	api.WriteJSON(w, http.StatusOK, edge)

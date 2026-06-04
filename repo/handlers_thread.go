@@ -63,6 +63,8 @@ func (m *Module) createThreadHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventThreadCreated, core.EventThreadCreatePayload{Thread: thread})
+
 		api.SetETag(w, thread.Version)
 		api.WriteJSON(w, http.StatusCreated, thread)
 	}
@@ -120,6 +122,8 @@ func (m *Module) updateThreadFromRequest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	m.publishEvent(thread.RepoID, core.EventThreadUpdated, core.EventThreadUpdatePayload{ThreadID: thread.ID, UpdatedThread: thread})
+
 	api.SetETag(w, thread.Version)
 	api.WriteJSON(w, http.StatusOK, thread)
 }
@@ -165,6 +169,12 @@ func (m *Module) addNodeToThreadHandler(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	m.publishEvent(thread.RepoID, core.EventThreadNodeAdded, core.EventThreadNodePayload{
+		ThreadID: tid,
+		NodeID:   nodeID,
+		EdgeType: edgeType,
+	})
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -188,6 +198,11 @@ func (m *Module) removeNodeFromThreadHandler(w http.ResponseWriter, r *http.Requ
 		api.WriteError(w, http.StatusInternalServerError, "remove_failed", "Failed to remove node from thread")
 		return
 	}
+
+	m.publishEvent(thread.RepoID, core.EventThreadNodeRemoved, core.EventThreadNodePayload{
+		ThreadID: tid,
+		NodeID:   nodeID,
+	})
 
 	w.WriteHeader(http.StatusNoContent)
 }

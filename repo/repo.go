@@ -1,9 +1,11 @@
 package repo
 
 import (
+	"encoding/json"
 	"log/slog"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
 )
@@ -86,4 +88,26 @@ func (m *Module) HTTPHandlers() []app.HTTPHandler {
 // Cascading delete handlers will be added when JetStream consumers are wired.
 func (m *Module) MsgHandlers() []app.MsgHandler {
 	return []app.MsgHandler{}
+}
+
+// publishEvent publishes a domain event to JetStream after a successful write.
+// This is fire-and-forget: publishing failures are logged but never block the
+// HTTP response to the client.
+func (m *Module) publishEvent(repoID uuid.UUID, eventType core.EventType, payload any) {
+	if m.pub == nil {
+		return
+	}
+	evt, err := core.NewEvent(eventType, repoID, payload)
+	if err != nil {
+		m.logger.Error("Failed to create event", "type", eventType, "error", err)
+		return
+	}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		m.logger.Error("Failed to marshal event", "type", eventType, "error", err)
+		return
+	}
+	if err := m.pub.Publish(evt.Subject(), data); err != nil {
+		m.logger.Error("Failed to publish event", "subject", evt.Subject(), "error", err)
+	}
 }

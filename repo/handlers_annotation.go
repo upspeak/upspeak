@@ -87,6 +87,8 @@ func (m *Module) createAnnotationHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventAnnotationCreated, core.EventAnnotationCreatePayload{Annotation: annotation})
+
 		api.SetETag(w, annotation.Version)
 		api.WriteJSON(w, http.StatusCreated, annotation)
 	}
@@ -152,6 +154,11 @@ func (m *Module) updateAnnotationFromRequest(w http.ResponseWriter, r *http.Requ
 		api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to update annotation")
 		return
 	}
+
+	m.publishEvent(annotation.RepoID, core.EventAnnotationUpdated, core.EventAnnotationUpdatePayload{
+		AnnotationID:      annotation.ID,
+		UpdatedAnnotation: annotation,
+	})
 
 	api.SetETag(w, annotation.Version)
 	api.WriteJSON(w, http.StatusOK, annotation)

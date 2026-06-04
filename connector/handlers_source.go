@@ -161,7 +161,7 @@ func (m *Module) updateSourceHandler() http.HandlerFunc {
 
 		ifMatch := api.ParseIfMatch(r)
 		if ifMatch == 0 {
-			api.WriteError(w, http.StatusPreconditionFailed, "missing_if_match", "If-Match header is required for updates")
+			api.WriteError(w, http.StatusPreconditionRequired, "if_match_required", "If-Match header is required for updates")
 			return
 		}
 		if ifMatch == -1 {

@@ -85,6 +85,8 @@ func (m *Module) createRepoHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventRepoCreated, core.EventRepoPayload{Repository: repo})
+
 		api.SetETag(w, repo.Version)
 		api.WriteJSON(w, http.StatusCreated, repo)
 	}
@@ -190,6 +192,8 @@ func (m *Module) updateRepoHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventRepoUpdated, core.EventRepoPayload{Repository: repo})
+
 		api.SetETag(w, repo.Version)
 		api.WriteJSON(w, http.StatusOK, repo)
 	}
@@ -244,6 +248,8 @@ func (m *Module) patchRepoHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventRepoUpdated, core.EventRepoPayload{Repository: repo})
+
 		api.SetETag(w, repo.Version)
 		api.WriteJSON(w, http.StatusOK, repo)
 	}
@@ -265,6 +271,8 @@ func (m *Module) deleteRepoHandler() http.HandlerFunc {
 			api.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete repository")
 			return
 		}
+
+		m.publishEvent(repo.ID, core.EventRepoDeleted, core.EventRepoDeletePayload{RepoID: repo.ID})
 
 		w.WriteHeader(http.StatusNoContent)
 	}

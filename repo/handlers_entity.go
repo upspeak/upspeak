@@ -352,12 +352,24 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 	switch entityType {
 	case "node":
 		err = m.archive.DeleteNode(id)
+		if err == nil {
+			m.publishEvent(repo.ID, core.EventNodeDeleted, core.EventNodeDeletePayload{NodeID: id})
+		}
 	case "edge":
 		err = m.archive.DeleteEdge(id)
+		if err == nil {
+			m.publishEvent(repo.ID, core.EventEdgeDeleted, core.EventEdgeDeletePayload{EdgeID: id})
+		}
 	case "thread":
 		err = m.archive.DeleteThread(id)
+		if err == nil {
+			m.publishEvent(repo.ID, core.EventThreadDeleted, core.EventThreadDeletePayload{ThreadID: id})
+		}
 	case "annotation":
 		err = m.archive.DeleteAnnotation(id)
+		if err == nil {
+			m.publishEvent(repo.ID, core.EventAnnotationDeleted, core.EventAnnotationDeletePayload{AnnotationID: id})
+		}
 	case "filter":
 		// Verify filter belongs to this repo before deleting.
 		f, filterErr := m.archive.GetFilter(id)

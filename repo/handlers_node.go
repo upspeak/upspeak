@@ -61,6 +61,8 @@ func (m *Module) createNodeHandler() http.HandlerFunc {
 			return
 		}
 
+		m.publishEvent(repo.ID, core.EventNodeCreated, core.EventNodeCreatePayload{Node: node})
+
 		api.SetETag(w, node.Version)
 		api.WriteJSON(w, http.StatusCreated, node)
 	}
@@ -115,6 +117,10 @@ func (m *Module) batchCreateNodesHandler() http.HandlerFunc {
 		if err := m.archive.SaveBatchNodes(nodes); err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to create nodes")
 			return
+		}
+
+		for _, node := range nodes {
+			m.publishEvent(repo.ID, core.EventNodeCreated, core.EventNodeCreatePayload{Node: node})
 		}
 
 		result := map[string]any{
@@ -189,6 +195,8 @@ func (m *Module) updateNodeFromRequest(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
+	m.publishEvent(node.RepoID, core.EventNodeUpdated, core.EventNodeUpdatePayload{NodeID: node.ID, UpdatedNode: node})
+
 	api.SetETag(w, node.Version)
 	api.WriteJSON(w, http.StatusOK, node)
 }
@@ -245,6 +253,8 @@ func (m *Module) patchNodeFromRequest(w http.ResponseWriter, r *http.Request, re
 		api.WriteError(w, http.StatusInternalServerError, "save_failed", "Failed to update node")
 		return
 	}
+
+	m.publishEvent(node.RepoID, core.EventNodePatched, core.EventNodeUpdatePayload{NodeID: node.ID, UpdatedNode: node})
 
 	api.SetETag(w, node.Version)
 	api.WriteJSON(w, http.StatusOK, node)
