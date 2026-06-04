@@ -284,7 +284,8 @@ func (m *Module) triggerPublishHandler() http.HandlerFunc {
 			return
 		}
 
-		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobPublish)
+		params, _ := json.Marshal(map[string]string{"sink_id": sink.ID.String()})
+		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobPublish, params)
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "job_failed", "Failed to create publish job")
 			return

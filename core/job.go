@@ -16,6 +16,7 @@ type Job struct {
 	RepoID      uuid.UUID       `json:"repo_id"`
 	Type        JobType         `json:"type"`
 	Status      JobStatus       `json:"status"`
+	Params      json.RawMessage `json:"params,omitempty"`
 	StartedAt   *time.Time      `json:"started_at,omitempty"`
 	CompletedAt *time.Time      `json:"completed_at,omitempty"`
 	Result      json.RawMessage `json:"result,omitempty"`

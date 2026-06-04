@@ -279,7 +279,7 @@ func (m *Module) triggerScheduleHandler() http.HandlerFunc {
 			repoID = *schedule.Action.RepoID
 		}
 
-		job, err := jobs.CreateJob(m.archive, m.pub, repoID, defaultOwnerID, jobType)
+		job, err := jobs.CreateJob(m.archive, m.pub, repoID, defaultOwnerID, jobType, buildScheduleParams(schedule))
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "job_create_failed", "Failed to create job for schedule trigger")
 			return
@@ -455,6 +455,26 @@ func actionTypeToJobType(actionType string) core.JobType {
 	default:
 		return ""
 	}
+}
+
+// buildScheduleParams constructs the JSON params for a job created by a schedule.
+// It includes source_id, sink_id, and any extra params from the action.
+func buildScheduleParams(schedule *core.Schedule) json.RawMessage {
+	p := make(map[string]any)
+	if schedule.Action.SourceID != nil {
+		p["source_id"] = schedule.Action.SourceID.String()
+	}
+	if schedule.Action.SinkID != nil {
+		p["sink_id"] = schedule.Action.SinkID.String()
+	}
+	for k, v := range schedule.Action.Params {
+		p[k] = v
+	}
+	if len(p) == 0 {
+		return nil
+	}
+	data, _ := json.Marshal(p)
+	return data
 }
 
 // isVersionConflict checks if an error is a VersionConflictError.

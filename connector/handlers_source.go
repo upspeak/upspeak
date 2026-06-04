@@ -285,7 +285,8 @@ func (m *Module) triggerCollectHandler() http.HandlerFunc {
 			return
 		}
 
-		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobCollect)
+		params, _ := json.Marshal(map[string]string{"source_id": source.ID.String()})
+		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobCollect, params)
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "job_failed", "Failed to create collection job")
 			return

@@ -192,7 +192,7 @@ func (r *Runner) processTrigger(msg *app.Msg) {
 		repoID = *schedule.Action.RepoID
 	}
 
-	job, err := jobs.CreateJob(r.archive, r.pub, repoID, schedule.CreatedBy, jobType)
+	job, err := jobs.CreateJob(r.archive, r.pub, repoID, schedule.CreatedBy, jobType, buildScheduleParams(schedule))
 	if err != nil {
 		r.logger.Error("Failed to create job from schedule trigger", "schedule_id", schedule.ID, "error", err)
 		_ = msg.Nak() // Redeliver to retry.

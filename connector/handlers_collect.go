@@ -36,7 +36,8 @@ func (m *Module) oneShotCollectHandler() http.HandlerFunc {
 			return
 		}
 
-		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobWebhook)
+		params, _ := json.Marshal(map[string]string{"url": req.URL, "content_type": req.ContentType})
+		job, err := jobs.CreateJob(m.archive, m.pub, repo.ID, defaultOwnerID, core.JobWebhook, params)
 		if err != nil {
 			api.WriteError(w, http.StatusInternalServerError, "job_failed", "Failed to create collection job")
 			return

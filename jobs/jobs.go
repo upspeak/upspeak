@@ -158,14 +158,15 @@ func (m *Module) resolveJobByShortID(shortID string) (*core.Job, error) {
 // CreateJob is a helper that other modules can use to create a job and publish
 // it to the JOBS JetStream stream. It generates a UUID, sets the initial status
 // to pending, persists to the archive, and publishes a message so the job runner
-// picks it up. Pass nil for pub if no publisher is available (job will be created
-// but not dispatched for execution).
-func CreateJob(archive core.Archive, pub app.Publisher, repoID, createdBy uuid.UUID, jobType core.JobType) (*core.Job, error) {
+// picks it up. The params argument carries context (source/sink ID, URL) needed
+// by the runner to execute the job.
+func CreateJob(archive core.Archive, pub app.Publisher, repoID, createdBy uuid.UUID, jobType core.JobType, params json.RawMessage) (*core.Job, error) {
 	job := &core.Job{
 		ID:        core.NewID(),
 		RepoID:    repoID,
 		Type:      jobType,
 		Status:    core.JobStatusPending,
+		Params:    params,
 		CreatedBy: createdBy,
 	}
 

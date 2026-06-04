@@ -21,6 +21,11 @@ func (a *LocalArchive) saveJob(job *core.Job) error {
 
 	now := time.Now().UTC()
 
+	var paramsJSON sql.NullString
+	if len(job.Params) > 0 && string(job.Params) != "null" {
+		paramsJSON = sql.NullString{String: string(job.Params), Valid: true}
+	}
+
 	var resultJSON sql.NullString
 	if len(job.Result) > 0 && string(job.Result) != "null" {
 		resultJSON = sql.NullString{String: string(job.Result), Valid: true}
@@ -52,10 +57,10 @@ func (a *LocalArchive) saveJob(job *core.Job) error {
 		job.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO jobs (id, short_id, repo_id, type, status, started_at, completed_at, result, error, created_by, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO jobs (id, short_id, repo_id, type, status, params, started_at, completed_at, result, error, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, job.ID.String(), job.ShortID, job.RepoID.String(), string(job.Type),
-			string(job.Status), startedAt, completedAt, resultJSON, errorStr,
+			string(job.Status), paramsJSON, startedAt, completedAt, resultJSON, errorStr,
 			job.CreatedBy.String(),
 			job.CreatedAt.Format(time.RFC3339), job.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
@@ -83,7 +88,7 @@ func (a *LocalArchive) saveJob(job *core.Job) error {
 // getJobByShortID retrieves a job by its short ID (e.g. "JOB-42").
 func (a *LocalArchive) getJobByShortID(shortID string) (*core.Job, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, type, status, started_at, completed_at, result, error, created_by, created_at, updated_at
+		SELECT id, short_id, repo_id, type, status, params, started_at, completed_at, result, error, created_by, created_at, updated_at
 		FROM jobs WHERE short_id = ?
 	`, shortID)
 
@@ -93,7 +98,7 @@ func (a *LocalArchive) getJobByShortID(shortID string) (*core.Job, error) {
 // getJob retrieves a job by UUID.
 func (a *LocalArchive) getJob(jobID uuid.UUID) (*core.Job, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, type, status, started_at, completed_at, result, error, created_by, created_at, updated_at
+		SELECT id, short_id, repo_id, type, status, params, started_at, completed_at, result, error, created_by, created_at, updated_at
 		FROM jobs WHERE id = ?
 	`, jobID.String())
 
@@ -138,7 +143,7 @@ func (a *LocalArchive) listJobs(opts core.JobListOptions) ([]core.Job, int, erro
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, status, started_at, completed_at, result, error, created_by, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, status, params, started_at, completed_at, result, error, created_by, created_at, updated_at
 		 FROM jobs %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -166,10 +171,10 @@ func (a *LocalArchive) listJobs(opts core.JobListOptions) ([]core.Job, int, erro
 func scanJobFromSingleRow(row *sql.Row) (*core.Job, error) {
 	var job core.Job
 	var idStr, repoIDStr, createdByStr, typeStr, statusStr, createdAt, updatedAt string
-	var startedAt, completedAt, resultStr, errorStr sql.NullString
+	var paramsStr, startedAt, completedAt, resultStr, errorStr sql.NullString
 
 	err := row.Scan(&idStr, &job.ShortID, &repoIDStr, &typeStr, &statusStr,
-		&startedAt, &completedAt, &resultStr, &errorStr, &createdByStr,
+		&paramsStr, &startedAt, &completedAt, &resultStr, &errorStr, &createdByStr,
 		&createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("job", "")
@@ -179,29 +184,29 @@ func scanJobFromSingleRow(row *sql.Row) (*core.Job, error) {
 	}
 
 	return parseJobFields(&job, idStr, repoIDStr, createdByStr, typeStr, statusStr,
-		startedAt, completedAt, resultStr, errorStr, createdAt, updatedAt)
+		paramsStr, startedAt, completedAt, resultStr, errorStr, createdAt, updatedAt)
 }
 
 // scanJobFromRow scans a job from a *sql.Rows iterator.
 func scanJobFromRow(rows *sql.Rows) (*core.Job, error) {
 	var job core.Job
 	var idStr, repoIDStr, createdByStr, typeStr, statusStr, createdAt, updatedAt string
-	var startedAt, completedAt, resultStr, errorStr sql.NullString
+	var paramsStr, startedAt, completedAt, resultStr, errorStr sql.NullString
 
 	err := rows.Scan(&idStr, &job.ShortID, &repoIDStr, &typeStr, &statusStr,
-		&startedAt, &completedAt, &resultStr, &errorStr, &createdByStr,
+		&paramsStr, &startedAt, &completedAt, &resultStr, &errorStr, &createdByStr,
 		&createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan job row: %w", err)
 	}
 
 	return parseJobFields(&job, idStr, repoIDStr, createdByStr, typeStr, statusStr,
-		startedAt, completedAt, resultStr, errorStr, createdAt, updatedAt)
+		paramsStr, startedAt, completedAt, resultStr, errorStr, createdAt, updatedAt)
 }
 
 // parseJobFields populates a Job's parsed fields from raw scanned strings.
 func parseJobFields(job *core.Job, idStr, repoIDStr, createdByStr, typeStr, statusStr string,
-	startedAt, completedAt, resultStr, errorStr sql.NullString,
+	paramsStr, startedAt, completedAt, resultStr, errorStr sql.NullString,
 	createdAt, updatedAt string) (*core.Job, error) {
 	var err error
 
@@ -220,6 +225,10 @@ func parseJobFields(job *core.Job, idStr, repoIDStr, createdByStr, typeStr, stat
 
 	job.Type = core.JobType(typeStr)
 	job.Status = core.JobStatus(statusStr)
+
+	if paramsStr.Valid {
+		job.Params = json.RawMessage(paramsStr.String)
+	}
 
 	if startedAt.Valid {
 		t, err := time.Parse(time.RFC3339, startedAt.String)

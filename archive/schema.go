@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 	repo_id      TEXT NOT NULL,
 	type         TEXT NOT NULL,
 	status       TEXT NOT NULL DEFAULT 'pending',
+	params       TEXT,
 	started_at   TEXT,
 	completed_at TEXT,
 	result       TEXT,
