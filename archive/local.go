@@ -347,6 +347,16 @@ func (a *LocalArchive) ListSinks(repoID uuid.UUID, opts core.SinkListOptions) ([
 	return a.listSinks(repoID, opts)
 }
 
+// --- core.IngestCursorStore implementation ---
+
+func (a *LocalArchive) SaveIngestCursor(c *core.IngestCursor) error {
+	return a.saveIngestCursor(c)
+}
+
+func (a *LocalArchive) GetIngestCursor(sourceID uuid.UUID) (*core.IngestCursor, error) {
+	return a.getIngestCursor(sourceID)
+}
+
 // --- core.ConnectorHistoryStore implementation ---
 
 func (a *LocalArchive) RecordCollectionAttempt(record *core.CollectionRecord) error {

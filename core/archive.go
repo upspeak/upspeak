@@ -103,6 +103,13 @@ type SinkStore interface {
 	ListSinks(repoID uuid.UUID, opts SinkListOptions) ([]Sink, int, error)
 }
 
+// IngestCursorStore handles per-source ingestion cursor persistence.
+// The cursor payload is opaque — adapters define their own resumption format.
+type IngestCursorStore interface {
+	SaveIngestCursor(c *IngestCursor) error
+	GetIngestCursor(sourceID uuid.UUID) (*IngestCursor, error)
+}
+
 // ConnectorHistoryStore handles collection and publish history persistence.
 type ConnectorHistoryStore interface {
 	RecordCollectionAttempt(record *CollectionRecord) error
@@ -153,6 +160,7 @@ type Archive interface {
 	JobStore
 	SourceStore
 	SinkStore
+	IngestCursorStore
 	ConnectorHistoryStore
 	ScheduleStore
 	RuleStore
