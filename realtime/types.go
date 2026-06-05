@@ -18,7 +18,7 @@ const (
 	maxConnsPerIdentity = 5                // connections per authenticated identity
 	ingestBufferSize    = 1024             // hub ingest backlog
 	pingInterval        = 30 * time.Second // server keepalive interval
-	maxPingFailures     = 3                // consecutive missed pongs before close
+	pingTimeout         = 10 * time.Second // grace for a pong before the conn is closed
 )
 
 // clientMessage is a control message sent by a client over the socket.
