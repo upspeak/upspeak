@@ -11,20 +11,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
+	"github.com/upspeak/upspeak/ingest"
 )
 
 // Runner consumes jobs from the JOBS JetStream stream and executes them.
-// It runs in a goroutine started by StartRunner and stopped via the context.
+// It runs in a goroutine started via Run and stopped via the context.
 type Runner struct {
 	archive  core.Archive
 	consumer app.Consumer
+	pub      app.Publisher
+	registry app.AdapterRegistry
+	pipeline *ingest.Pipeline
 }
 
-// NewRunner creates a new job runner.
-func NewRunner(archive core.Archive, consumer app.Consumer) *Runner {
+// NewRunner creates a new job runner. pub and registry are injected so the
+// runner dispatches to adapters through interfaces and never imports the
+// concrete integrations (breaking the connector<->jobs cycle). pub may be nil
+// in tests that call execute* directly.
+func NewRunner(archive core.Archive, consumer app.Consumer, pub app.Publisher, registry app.AdapterRegistry) *Runner {
 	return &Runner{
 		archive:  archive,
 		consumer: consumer,
+		pub:      pub,
+		registry: registry,
+		pipeline: ingest.NewPipeline(archive, pub),
 	}
 }
 
@@ -152,6 +162,7 @@ type collectParams struct {
 	SourceID string `json:"source_id"`
 }
 
+// NOTE: registry+pipeline dispatch (cursors, filter-on-normalised, dedup) lands in Sub-project B.
 func (r *Runner) executeCollect(job *core.Job) (json.RawMessage, error) {
 	var params collectParams
 	if len(job.Params) > 0 {
@@ -215,6 +226,7 @@ type publishParams struct {
 	SinkID string `json:"sink_id"`
 }
 
+// NOTE: registry+pipeline dispatch (cursors, filter-on-normalised, dedup) lands in Sub-project B.
 func (r *Runner) executePublish(job *core.Job) (json.RawMessage, error) {
 	var params publishParams
 	if len(job.Params) > 0 {
@@ -290,18 +302,62 @@ func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 			return nil, fmt.Errorf("invalid webhook params: %w", err)
 		}
 	}
-
 	if params.URL == "" {
 		return nil, errors.New("url is required for webhook jobs")
 	}
 
-	// One-shot URL collection. Real implementation would fetch the URL,
-	// parse content, and create nodes. For now, record completion.
-	slog.Info("Executing webhook job", "url", params.URL, "repo_id", job.RepoID)
+	adapter, ok := r.registry.AdapterFor(core.ConnectorWebhook)
+	if !ok {
+		return nil, errors.New("no adapter registered for connector: webhook")
+	}
+	collector, ok := adapter.(core.Collector)
+	if !ok {
+		return nil, errors.New("webhook adapter does not support collect")
+	}
+
+	createdBy, err := r.repoOwner(job.RepoID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ephemeral, unpersisted Source carries the one-shot URL to the adapter.
+	// Because it is not persisted, ingested nodes get no source provenance.
+	ephemeral := &core.Source{
+		RepoID:    job.RepoID,
+		Connector: core.ConnectorWebhook,
+		Config:    map[string]any{"url": params.URL, "content_type": params.ContentType},
+	}
+
+	batch, err := collector.Collect(context.Background(), core.CollectRequest{Source: ephemeral})
+	if err != nil {
+		return nil, fmt.Errorf("webhook collect failed: %w", err)
+	}
+
+	res, err := r.pipeline.Ingest(ingest.IngestContext{
+		RepoID:    job.RepoID,
+		Source:    nil, // ad-hoc: no provenance, no dedup, no filters
+		CreatedBy: createdBy,
+	}, batch)
+	if err != nil {
+		return nil, fmt.Errorf("webhook ingest failed: %w", err)
+	}
 
 	result, _ := json.Marshal(map[string]any{
-		"url":    params.URL,
-		"status": "success",
+		"url":     params.URL,
+		"created": res.Created,
+		"updated": res.Updated,
+		"skipped": res.Skipped,
+		"status":  "success",
 	})
 	return result, nil
+}
+
+// repoOwner resolves a repo's owner, used as CreatedBy for ingested nodes until
+// author->User resolution lands in Sub-project B.
+func (r *Runner) repoOwner(repoID uuid.UUID) (uuid.UUID, error) {
+	repo, err := r.archive.GetRepository(repoID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("resolve repo owner: %w", err)
+	}
+	return repo.OwnerID, nil
 }
