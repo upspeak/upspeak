@@ -69,6 +69,9 @@ func TestExecuteWebhook_PersistsNode(t *testing.T) {
 	if res["created"] != float64(1) {
 		t.Fatalf("expected created=1, got %v", res["created"])
 	}
+	if res["url"] != srv.URL {
+		t.Fatalf("expected redacted url %q, got %v", srv.URL, res["url"])
+	}
 
 	nodes, _, err := a.ListNodes(repo.ID, core.NodeListOptions{ListOptions: core.DefaultListOptions()})
 	if err != nil {

@@ -349,7 +349,7 @@ func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 	}
 
 	result, _ := json.Marshal(map[string]any{
-		"url":     params.URL,
+		"url":     redactURL(params.URL),
 		"created": res.Created,
 		"updated": res.Updated,
 		"skipped": res.Skipped,
