@@ -33,6 +33,8 @@ Upspeak uses a **hybrid synchronous core + NATS JetStream** architecture:
 
 Upspeak is **local-first**: offline writes succeed immediately and sync when reconnected. The system runs autonomously in the background (fetching sources, applying rules, processing data) and presents results when the user connects.
 
+The decisions behind this architecture — the API-first stance, hexagonal infrastructure isolation, the hybrid write core, the global NATS JetStream event stream, and the embedded broker — are recorded as Architectural Decision Records in [`docs/adr/`](./docs/adr/).
+
 ## Vision: Social Knowledge Graph
 
 Upspeak is designed as personal-first, federated knowledge infrastructure. While the current implementation focuses on single-user, multi-device scenarios, the architecture is being built toward:
@@ -63,10 +65,10 @@ The HTTP API is defined by the module handlers under `repo/`, `filter/`, `jobs/`
 cp upspeak.sample.yaml upspeak.yaml
 ./build.sh dev
 
-# Run tests
-go test ./...
+# Run tests (search needs the sqlite_fts5 build tag; build.sh sets it automatically)
+go test -tags sqlite_fts5 ./...
 
-# Clean build artifacts
+# Clean build artefacts
 ./build.sh cleanup
 ```
 
