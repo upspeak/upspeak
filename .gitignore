@@ -47,5 +47,6 @@ $RECYCLE.BIN/
 
 # Claude Code — track shared artefacts, ignore personal files
 .claude/*
+!.claude/agents/
 !.claude/skills/
 !.claude/settings.json
