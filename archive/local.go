@@ -22,7 +22,12 @@ type LocalArchive struct {
 	contentDir   string
 	db           *sql.DB
 	ftsAvailable bool
+	cipher       core.SecretCipher
 }
+
+// SetSecretCipher injects the cipher used to encrypt connection credentials at
+// rest. Until set, writes that carry credentials fail with core.ErrSecretKeyMissing.
+func (a *LocalArchive) SetSecretCipher(c core.SecretCipher) { a.cipher = c }
 
 // NewLocalArchive creates a new LocalArchive at the specified path.
 func NewLocalArchive(path string) (*LocalArchive, error) {
@@ -345,6 +350,28 @@ func (a *LocalArchive) DeleteSink(sinkID uuid.UUID) error {
 
 func (a *LocalArchive) ListSinks(repoID uuid.UUID, opts core.SinkListOptions) ([]core.Sink, int, error) {
 	return a.listSinks(repoID, opts)
+}
+
+// --- core.ConnectionStore implementation ---
+
+func (a *LocalArchive) SaveConnection(conn *core.Connection) error {
+	return a.saveConnection(conn)
+}
+
+func (a *LocalArchive) GetConnection(connID uuid.UUID) (*core.Connection, error) {
+	return a.getConnection(connID)
+}
+
+func (a *LocalArchive) ListConnections(ownerID uuid.UUID, opts core.ConnectionListOptions) ([]core.Connection, int, error) {
+	return a.listConnections(ownerID, opts)
+}
+
+func (a *LocalArchive) DeleteConnection(connID uuid.UUID) error {
+	return a.deleteConnection(connID)
+}
+
+func (a *LocalArchive) GetConnectionReferences(connID uuid.UUID) ([]core.FilterReference, error) {
+	return a.getConnectionReferences(connID)
 }
 
 // --- core.IngestCursorStore implementation ---

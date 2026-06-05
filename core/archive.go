@@ -103,6 +103,18 @@ type SinkStore interface {
 	ListSinks(repoID uuid.UUID, opts SinkListOptions) ([]Sink, int, error)
 }
 
+// ConnectionStore handles owner-scoped connection persistence. Credentials are
+// encrypted at rest by the implementation.
+type ConnectionStore interface {
+	SaveConnection(conn *Connection) error
+	GetConnection(connID uuid.UUID) (*Connection, error)
+	ListConnections(ownerID uuid.UUID, opts ConnectionListOptions) ([]Connection, int, error)
+	DeleteConnection(connID uuid.UUID) error
+	// GetConnectionReferences returns sources/sinks referencing the connection,
+	// for delete integrity. Reuses FilterReference for the {type,id,name} shape.
+	GetConnectionReferences(connID uuid.UUID) ([]FilterReference, error)
+}
+
 // IngestCursorStore handles per-source ingestion cursor persistence.
 // The cursor payload is opaque — adapters define their own resumption format.
 type IngestCursorStore interface {
@@ -160,6 +172,7 @@ type Archive interface {
 	JobStore
 	SourceStore
 	SinkStore
+	ConnectionStore
 	IngestCursorStore
 	ConnectorHistoryStore
 	ScheduleStore
