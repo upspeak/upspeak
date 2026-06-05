@@ -50,9 +50,9 @@ func (a *LocalArchive) saveSink(sink *core.Sink) error {
 		sink.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO sinks (id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, sink.ID.String(), sink.ShortID, sink.RepoID.String(), sink.Name,
+			INSERT INTO sinks (id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, sink.ID.String(), sink.ShortID, sink.RepoID.String(), uuidPtrString(sink.ConnectionID), sink.Name,
 			string(sink.Connector), string(configJSON), string(filterIDsJSON),
 			string(sink.FilterChainMode), stringOrNil(rateLimitJSON), string(sink.Status),
 			sink.CreatedBy.String(), sink.Version,
@@ -68,9 +68,9 @@ func (a *LocalArchive) saveSink(sink *core.Sink) error {
 	sink.UpdatedAt = now
 	result, err := a.db.Exec(`
 		UPDATE sinks
-		SET name = ?, connector = ?, config = ?, filter_ids = ?, filter_chain_mode = ?, rate_limit = ?, status = ?, version = version + 1, updated_at = ?
+		SET name = ?, connection_id = ?, connector = ?, config = ?, filter_ids = ?, filter_chain_mode = ?, rate_limit = ?, status = ?, version = version + 1, updated_at = ?
 		WHERE id = ? AND version = ?
-	`, sink.Name, string(sink.Connector), string(configJSON), string(filterIDsJSON),
+	`, sink.Name, uuidPtrString(sink.ConnectionID), string(sink.Connector), string(configJSON), string(filterIDsJSON),
 		string(sink.FilterChainMode), stringOrNil(rateLimitJSON), string(sink.Status),
 		sink.UpdatedAt.Format(time.RFC3339),
 		sink.ID.String(), sink.Version)
@@ -97,7 +97,7 @@ func (a *LocalArchive) saveSink(sink *core.Sink) error {
 // getSink retrieves a sink by UUID.
 func (a *LocalArchive) getSink(sinkID uuid.UUID) (*core.Sink, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
 		FROM sinks WHERE id = ?
 	`, sinkID.String())
 
@@ -159,7 +159,7 @@ func (a *LocalArchive) listSinks(repoID uuid.UUID, opts core.SinkListOptions) ([
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
 		 FROM sinks %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -187,9 +187,9 @@ func (a *LocalArchive) listSinks(repoID uuid.UUID, opts core.SinkListOptions) ([
 func scanSinkFromSingleRow(row *sql.Row) (*core.Sink, error) {
 	var sink core.Sink
 	var idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, statusStr, createdAt, updatedAt string
-	var rateLimitStr sql.NullString
+	var connectionIDStr, rateLimitStr sql.NullString
 
-	err := row.Scan(&idStr, &sink.ShortID, &repoIDStr, &sink.Name, &connectorStr,
+	err := row.Scan(&idStr, &sink.ShortID, &repoIDStr, &connectionIDStr, &sink.Name, &connectorStr,
 		&configStr, &filterIDsStr, &filterChainModeStr, &rateLimitStr, &statusStr,
 		&createdByStr, &sink.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
@@ -199,27 +199,27 @@ func scanSinkFromSingleRow(row *sql.Row) (*core.Sink, error) {
 		return nil, fmt.Errorf("failed to scan sink: %w", err)
 	}
 
-	return parseSinkFields(&sink, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
+	return parseSinkFields(&sink, idStr, repoIDStr, createdByStr, connectionIDStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
 }
 
 // scanSinkFromRow scans a sink from a *sql.Rows iterator.
 func scanSinkFromRow(rows *sql.Rows) (*core.Sink, error) {
 	var sink core.Sink
 	var idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, statusStr, createdAt, updatedAt string
-	var rateLimitStr sql.NullString
+	var connectionIDStr, rateLimitStr sql.NullString
 
-	err := rows.Scan(&idStr, &sink.ShortID, &repoIDStr, &sink.Name, &connectorStr,
+	err := rows.Scan(&idStr, &sink.ShortID, &repoIDStr, &connectionIDStr, &sink.Name, &connectorStr,
 		&configStr, &filterIDsStr, &filterChainModeStr, &rateLimitStr, &statusStr,
 		&createdByStr, &sink.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan sink row: %w", err)
 	}
 
-	return parseSinkFields(&sink, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
+	return parseSinkFields(&sink, idStr, repoIDStr, createdByStr, connectionIDStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
 }
 
 // parseSinkFields populates a Sink's parsed fields from raw scanned strings.
-func parseSinkFields(sink *core.Sink, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr, statusStr, createdAt, updatedAt string) (*core.Sink, error) {
+func parseSinkFields(sink *core.Sink, idStr, repoIDStr, createdByStr string, connectionIDStr sql.NullString, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr, statusStr, createdAt, updatedAt string) (*core.Sink, error) {
 	var err error
 
 	sink.ID, err = uuid.Parse(idStr)
@@ -233,6 +233,14 @@ func parseSinkFields(sink *core.Sink, idStr, repoIDStr, createdByStr, connectorS
 	sink.CreatedBy, err = uuid.Parse(createdByStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse sink created_by: %w", err)
+	}
+
+	if connectionIDStr.Valid && connectionIDStr.String != "" {
+		cid, err := uuid.Parse(connectionIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse sink connection_id: %w", err)
+		}
+		sink.ConnectionID = &cid
 	}
 
 	sink.Connector = core.ConnectorType(connectorStr)

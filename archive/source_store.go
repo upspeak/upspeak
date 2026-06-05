@@ -50,9 +50,9 @@ func (a *LocalArchive) saveSource(source *core.Source) error {
 		source.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO sources (id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, source.ID.String(), source.ShortID, source.RepoID.String(), source.Name,
+			INSERT INTO sources (id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, source.ID.String(), source.ShortID, source.RepoID.String(), uuidPtrString(source.ConnectionID), source.Name,
 			string(source.Connector), string(configJSON), string(filterIDsJSON),
 			string(source.FilterChainMode), stringOrNil(rateLimitJSON), string(source.Status),
 			source.CreatedBy.String(), source.Version,
@@ -68,9 +68,9 @@ func (a *LocalArchive) saveSource(source *core.Source) error {
 	source.UpdatedAt = now
 	result, err := a.db.Exec(`
 		UPDATE sources
-		SET name = ?, connector = ?, config = ?, filter_ids = ?, filter_chain_mode = ?, rate_limit = ?, status = ?, version = version + 1, updated_at = ?
+		SET name = ?, connection_id = ?, connector = ?, config = ?, filter_ids = ?, filter_chain_mode = ?, rate_limit = ?, status = ?, version = version + 1, updated_at = ?
 		WHERE id = ? AND version = ?
-	`, source.Name, string(source.Connector), string(configJSON), string(filterIDsJSON),
+	`, source.Name, uuidPtrString(source.ConnectionID), string(source.Connector), string(configJSON), string(filterIDsJSON),
 		string(source.FilterChainMode), stringOrNil(rateLimitJSON), string(source.Status),
 		source.UpdatedAt.Format(time.RFC3339),
 		source.ID.String(), source.Version)
@@ -97,7 +97,7 @@ func (a *LocalArchive) saveSource(source *core.Source) error {
 // getSource retrieves a source by UUID.
 func (a *LocalArchive) getSource(sourceID uuid.UUID) (*core.Source, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
 		FROM sources WHERE id = ?
 	`, sourceID.String())
 
@@ -159,7 +159,7 @@ func (a *LocalArchive) listSources(repoID uuid.UUID, opts core.SourceListOptions
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
 		 FROM sources %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -187,9 +187,9 @@ func (a *LocalArchive) listSources(repoID uuid.UUID, opts core.SourceListOptions
 func scanSourceFromSingleRow(row *sql.Row) (*core.Source, error) {
 	var source core.Source
 	var idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, statusStr, createdAt, updatedAt string
-	var rateLimitStr sql.NullString
+	var connectionIDStr, rateLimitStr sql.NullString
 
-	err := row.Scan(&idStr, &source.ShortID, &repoIDStr, &source.Name, &connectorStr,
+	err := row.Scan(&idStr, &source.ShortID, &repoIDStr, &connectionIDStr, &source.Name, &connectorStr,
 		&configStr, &filterIDsStr, &filterChainModeStr, &rateLimitStr, &statusStr,
 		&createdByStr, &source.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
@@ -199,27 +199,27 @@ func scanSourceFromSingleRow(row *sql.Row) (*core.Source, error) {
 		return nil, fmt.Errorf("failed to scan source: %w", err)
 	}
 
-	return parseSourceFields(&source, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
+	return parseSourceFields(&source, idStr, repoIDStr, createdByStr, connectionIDStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
 }
 
 // scanSourceFromRow scans a source from a *sql.Rows iterator.
 func scanSourceFromRow(rows *sql.Rows) (*core.Source, error) {
 	var source core.Source
 	var idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, statusStr, createdAt, updatedAt string
-	var rateLimitStr sql.NullString
+	var connectionIDStr, rateLimitStr sql.NullString
 
-	err := rows.Scan(&idStr, &source.ShortID, &repoIDStr, &source.Name, &connectorStr,
+	err := rows.Scan(&idStr, &source.ShortID, &repoIDStr, &connectionIDStr, &source.Name, &connectorStr,
 		&configStr, &filterIDsStr, &filterChainModeStr, &rateLimitStr, &statusStr,
 		&createdByStr, &source.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source row: %w", err)
 	}
 
-	return parseSourceFields(&source, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
+	return parseSourceFields(&source, idStr, repoIDStr, createdByStr, connectionIDStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr.String, statusStr, createdAt, updatedAt)
 }
 
 // parseSourceFields populates a Source's parsed fields from raw scanned strings.
-func parseSourceFields(source *core.Source, idStr, repoIDStr, createdByStr, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr, statusStr, createdAt, updatedAt string) (*core.Source, error) {
+func parseSourceFields(source *core.Source, idStr, repoIDStr, createdByStr string, connectionIDStr sql.NullString, connectorStr, configStr, filterIDsStr, filterChainModeStr, rateLimitStr, statusStr, createdAt, updatedAt string) (*core.Source, error) {
 	var err error
 
 	source.ID, err = uuid.Parse(idStr)
@@ -233,6 +233,14 @@ func parseSourceFields(source *core.Source, idStr, repoIDStr, createdByStr, conn
 	source.CreatedBy, err = uuid.Parse(createdByStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse source created_by: %w", err)
+	}
+
+	if connectionIDStr.Valid && connectionIDStr.String != "" {
+		cid, err := uuid.Parse(connectionIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse source connection_id: %w", err)
+		}
+		source.ConnectionID = &cid
 	}
 
 	source.Connector = core.ConnectorType(connectorStr)
