@@ -101,7 +101,7 @@ func (m *Module) createSinkHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSinkCreated, sink)
+		m.publishEvent(repo.ID, core.EventSinkCreated, core.EventSinkPayload{Sink: sink})
 		api.SetETag(w, sink.Version)
 		api.WriteJSON(w, http.StatusCreated, sink)
 	}
@@ -236,7 +236,7 @@ func (m *Module) updateSinkHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSinkUpdated, sink)
+		m.publishEvent(repo.ID, core.EventSinkUpdated, core.EventSinkPayload{Sink: sink})
 		api.SetETag(w, sink.Version)
 		api.WriteJSON(w, http.StatusOK, sink)
 	}
@@ -260,7 +260,7 @@ func (m *Module) deleteSinkHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSinkDeleted, sink)
+		m.publishEvent(repo.ID, core.EventSinkDeleted, core.EventSinkPayload{Sink: sink})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

@@ -84,7 +84,7 @@ func (m *Module) createRuleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventRuleCreated, rule)
+		m.publishEvent(repo.ID, core.EventRuleCreated, core.EventRulePayload{Rule: rule})
 		api.SetETag(w, rule.Version)
 		api.WriteJSON(w, http.StatusCreated, rule)
 	}
@@ -203,7 +203,7 @@ func (m *Module) updateRuleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventRuleUpdated, rule)
+		m.publishEvent(repo.ID, core.EventRuleUpdated, core.EventRulePayload{Rule: rule})
 		api.SetETag(w, rule.Version)
 		api.WriteJSON(w, http.StatusOK, rule)
 	}
@@ -227,7 +227,7 @@ func (m *Module) deleteRuleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventRuleDeleted, rule)
+		m.publishEvent(repo.ID, core.EventRuleDeleted, core.EventRulePayload{Rule: rule})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

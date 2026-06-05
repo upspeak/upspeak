@@ -88,7 +88,7 @@ func (m *Module) createScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(core.EventScheduleCreated, schedule)
+		m.publishEvent(core.EventScheduleCreated, core.EventSchedulePayload{Schedule: schedule})
 
 		api.SetETag(w, schedule.Version)
 		api.WriteJSON(w, http.StatusCreated, schedule)
@@ -227,7 +227,7 @@ func (m *Module) updateScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(core.EventScheduleUpdated, schedule)
+		m.publishEvent(core.EventScheduleUpdated, core.EventSchedulePayload{Schedule: schedule})
 
 		api.SetETag(w, schedule.Version)
 		api.WriteJSON(w, http.StatusOK, schedule)
@@ -250,7 +250,7 @@ func (m *Module) deleteScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(core.EventScheduleDeleted, schedule)
+		m.publishEvent(core.EventScheduleDeleted, core.EventSchedulePayload{Schedule: schedule})
 
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -319,7 +319,7 @@ func (m *Module) pauseScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(core.EventScheduleUpdated, schedule)
+		m.publishEvent(core.EventScheduleUpdated, core.EventSchedulePayload{Schedule: schedule})
 
 		api.SetETag(w, schedule.Version)
 		api.WriteJSON(w, http.StatusOK, schedule)
@@ -350,7 +350,7 @@ func (m *Module) resumeScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(core.EventScheduleUpdated, schedule)
+		m.publishEvent(core.EventScheduleUpdated, core.EventSchedulePayload{Schedule: schedule})
 
 		api.SetETag(w, schedule.Version)
 		api.WriteJSON(w, http.StatusOK, schedule)
@@ -395,8 +395,8 @@ func (m *Module) publishEvent(eventType core.EventType, payload any) {
 	}
 
 	repoID := uuid.Nil
-	if s, ok := payload.(*core.Schedule); ok && s.Action.RepoID != nil {
-		repoID = *s.Action.RepoID
+	if p, ok := payload.(core.EventSchedulePayload); ok && p.Schedule != nil && p.Schedule.Action.RepoID != nil {
+		repoID = *p.Schedule.Action.RepoID
 	}
 
 	evt, err := core.NewEvent(eventType, repoID, payload)

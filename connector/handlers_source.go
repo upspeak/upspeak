@@ -101,7 +101,7 @@ func (m *Module) createSourceHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSourceCreated, source)
+		m.publishEvent(repo.ID, core.EventSourceCreated, core.EventSourcePayload{Source: source})
 		api.SetETag(w, source.Version)
 		api.WriteJSON(w, http.StatusCreated, source)
 	}
@@ -237,7 +237,7 @@ func (m *Module) updateSourceHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSourceUpdated, source)
+		m.publishEvent(repo.ID, core.EventSourceUpdated, core.EventSourcePayload{Source: source})
 		api.SetETag(w, source.Version)
 		api.WriteJSON(w, http.StatusOK, source)
 	}
@@ -261,7 +261,7 @@ func (m *Module) deleteSourceHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventSourceDeleted, source)
+		m.publishEvent(repo.ID, core.EventSourceDeleted, core.EventSourcePayload{Source: source})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
