@@ -53,28 +53,6 @@ const (
 	EventConflictDetected    EventType = "ConflictDetected"
 )
 
-// InputEventType represents command events processed by HandleInputEvent.
-type InputEventType string
-
-// Input event types.
-const (
-	InputCreateNode       InputEventType = "CreateNode"
-	InputUpdateNode       InputEventType = "UpdateNode"
-	InputPatchNode        InputEventType = "PatchNode"
-	InputDeleteNode       InputEventType = "DeleteNode"
-	InputCreateEdge       InputEventType = "CreateEdge"
-	InputUpdateEdge       InputEventType = "UpdateEdge"
-	InputDeleteEdge       InputEventType = "DeleteEdge"
-	InputCreateThread     InputEventType = "CreateThread"
-	InputUpdateThread     InputEventType = "UpdateThread"
-	InputDeleteThread     InputEventType = "DeleteThread"
-	InputAddThreadNode    InputEventType = "AddThreadNode"
-	InputRemoveThreadNode InputEventType = "RemoveThreadNode"
-	InputCreateAnnotation InputEventType = "CreateAnnotation"
-	InputUpdateAnnotation InputEventType = "UpdateAnnotation"
-	InputDeleteAnnotation InputEventType = "DeleteAnnotation"
-)
-
 // ConnectorType identifies the type of a source or sink connector.
 type ConnectorType string
 
