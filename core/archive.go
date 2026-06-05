@@ -106,6 +106,10 @@ type SinkStore interface {
 // ConnectionStore handles owner-scoped connection persistence. Credentials are
 // encrypted at rest by the implementation.
 type ConnectionStore interface {
+	// SaveConnection persists the full Connection state. When updating an
+	// existing connection, callers must load it first (GetConnection populates
+	// the decrypted Credentials), modify, then save: saving a Connection with
+	// empty Credentials nulls the stored secret.
 	SaveConnection(conn *Connection) error
 	GetConnection(connID uuid.UUID) (*Connection, error)
 	ListConnections(ownerID uuid.UUID, opts ConnectionListOptions) ([]Connection, int, error)

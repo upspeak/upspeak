@@ -1728,3 +1728,15 @@ Deferred to later A-slices (correctly out of A1): adapter registry + ingest pipe
 **Type consistency:** `SourceID *uuid.UUID`/`ExternalID *string` (Task 1) match `GetNodeBySourceExternalID(uuid.UUID, string)` (Tasks 4, 6-interface). `Connection.Credentials map[string]any` (Task 1) matches `encryptCredentials(map[string]any)` (Task 7). `IngestCursor{SourceID, Cursor, UpdatedAt}` (Task 1) matches the store (Task 6). Helper names (`uuidPtrString`, `strPtrAny`, `timePtrString`, `stringOrNil`, `parseNullableTime`) are defined once and reused. `core.Publisher` (adapter role) is explicitly distinguished from `app.Publisher`.
 
 > **Tag reminder:** all archive test/build commands use `-tags sqlite_fts5` (per CLAUDE.md), so the search path compiles during the sweep.
+
+---
+
+## Watch-outs for A2/A3 (carried forward from the A1 final review)
+
+A1 shipped the data foundation; these are the wiring hooks the next slices must add — captured here so they are not rediscovered late:
+
+- **Wire the cipher at runtime (A3).** `main.go` never calls `secrets.NewCipherFromEnv()` / `LocalArchive.SetSecretCipher`, and `ModuleArchive.GetArchive()` returns `core.Archive` (no cipher setter). Until A3 wires the cipher, any real credential write fails closed with `core.ErrSecretKeyMissing` (safe, but non-functional). A3 must expose a setter or wire the cipher in `main.go` after the archive module's `Init`.
+- **Credential update is load-modify-save (A3).** `SaveConnection` persists full state; the connection HTTP handler must `GetConnection` → modify → save, or an update with empty `Credentials` will null the stored secret. (Now documented on `core.ConnectionStore.SaveConnection`.)
+- **Enforce the Connector↔Connection match (A2/A3).** `Source/Sink.ConnectionID` documents "Connector must match the Connection's" but nothing validates it yet. Enforce on create/update.
+- **Return 409 on in-use connections (A3).** `GetConnectionReferences` is ready; the delete handler should reject when refs are non-empty (mirrors filter delete).
+- **Adapter role interfaces have no implementers yet** — intentional seams: A2's registry type-asserts `Collector`/`Publisher`/`Streamer`; A4 implements `OAuthProvider` (Mastodon). Not dead code.

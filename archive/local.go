@@ -25,6 +25,11 @@ type LocalArchive struct {
 	cipher       core.SecretCipher
 }
 
+// Compile-time assertion that LocalArchive satisfies the full core.Archive
+// interface. A half-wired sub-interface fails here, at the package boundary,
+// rather than later at the call site in main.
+var _ core.Archive = (*LocalArchive)(nil)
+
 // SetSecretCipher injects the cipher used to encrypt connection credentials at
 // rest. Until set, writes that carry credentials fail with core.ErrSecretKeyMissing.
 func (a *LocalArchive) SetSecretCipher(c core.SecretCipher) { a.cipher = c }
