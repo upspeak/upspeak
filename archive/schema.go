@@ -27,12 +27,15 @@ CREATE TABLE IF NOT EXISTS nodes (
 	subject      TEXT NOT NULL,
 	content_type TEXT NOT NULL,
 	metadata     TEXT,
+	source_id    TEXT,
+	external_id  TEXT,
 	created_by   TEXT NOT NULL,
 	version      INTEGER NOT NULL DEFAULT 1,
 	created_at   TEXT NOT NULL,
 	updated_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_nodes_repo_id ON nodes(repo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_source_external ON nodes(source_id, external_id) WHERE source_id IS NOT NULL;
 
 -- Edges.
 CREATE TABLE IF NOT EXISTS edges (
@@ -165,6 +168,7 @@ CREATE TABLE IF NOT EXISTS sources (
 	id               TEXT PRIMARY KEY,
 	short_id         TEXT NOT NULL,
 	repo_id          TEXT NOT NULL,
+	connection_id    TEXT,
 	name             TEXT NOT NULL,
 	connector        TEXT NOT NULL,
 	config           TEXT NOT NULL DEFAULT '{}',
@@ -185,6 +189,7 @@ CREATE TABLE IF NOT EXISTS sinks (
 	id               TEXT PRIMARY KEY,
 	short_id         TEXT NOT NULL,
 	repo_id          TEXT NOT NULL,
+	connection_id    TEXT,
 	name             TEXT NOT NULL,
 	connector        TEXT NOT NULL,
 	config           TEXT NOT NULL DEFAULT '{}',
@@ -199,6 +204,37 @@ CREATE TABLE IF NOT EXISTS sinks (
 );
 CREATE INDEX IF NOT EXISTS idx_sinks_repo_id ON sinks(repo_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sinks_repo_short_id ON sinks(repo_id, short_id);
+
+-- Connections: owner-scoped, configure-once links to external systems.
+-- Credentials are stored encrypted (BLOB) and never returned in API responses.
+CREATE TABLE IF NOT EXISTS connections (
+	id                TEXT PRIMARY KEY,
+	short_id          TEXT NOT NULL,
+	owner_id          TEXT NOT NULL,
+	name              TEXT NOT NULL,
+	connector         TEXT NOT NULL,
+	auth_type         TEXT NOT NULL DEFAULT 'none',
+	config            TEXT NOT NULL DEFAULT '{}',
+	credentials       BLOB,
+	status            TEXT NOT NULL DEFAULT 'active',
+	rate_limit        TEXT,
+	credential_expiry TEXT,
+	last_checked_at   TEXT,
+	last_error        TEXT,
+	version           INTEGER NOT NULL DEFAULT 1,
+	created_by        TEXT NOT NULL,
+	created_at        TEXT NOT NULL,
+	updated_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_connections_owner ON connections(owner_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_owner_short_id ON connections(owner_id, short_id);
+
+-- Ingest cursors: per-source resumption point (opaque, adapter-defined).
+CREATE TABLE IF NOT EXISTS ingest_cursors (
+	source_id  TEXT PRIMARY KEY,
+	cursor     TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
 
 -- Collection history.
 CREATE TABLE IF NOT EXISTS collection_history (
