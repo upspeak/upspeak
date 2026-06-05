@@ -20,6 +20,11 @@ retrospective batches. Add the next sequential number rather than editing an exi
 record; supersede an older ADR by setting its `superseded_by` front-matter field and the
 new ADR's `supersedes`.
 
+Forward-looking records are recorded as **Proposed** while the decision is approved but
+not yet in code, flipping to **Accepted** when the implementation ships. ADR-0013 to
+ADR-0015 are the first such batch — the connector-adapterisation framework designed in
+`docs/design/2026-06-05-connector-adapterisation.md`.
+
 ## Linear, backward-only references
 
 ADRs are numbered in **dependency order**: a record only ever references
@@ -60,6 +65,9 @@ for *what* it does.
 | [0010](adr-0010-filter-and-rules-engine.md) | Reusable filter engine and hop-bounded rules engine | Accepted |
 | [0011](adr-0011-realtime-core-nats-fanout.md) | Real-time delivery via core-NATS fan-out with server-side filtering | Accepted |
 | [0012](adr-0012-embedded-nats-jetstream-server.md) | Embedded NATS JetStream server | Accepted |
+| [0013](adr-0013-adapterised-connectors-connection-entity.md) | Adapterised connectors via a Connection entity and adapter registry | Proposed |
+| [0014](adr-0014-encrypted-credential-storage.md) | Encrypted credential storage with a SecretCipher port | Proposed |
+| [0015](adr-0015-oauth2-connection-lifecycle.md) | OAuth2 connection lifecycle for adapters | Proposed |
 
 ## How to read these
 
