@@ -6,10 +6,11 @@ The `app` package is a lightweight micro-framework for composing and running the
 
 - **App** — Composes modules, manages HTTP routing with namespaced module routes, and handles the application lifecycle
 - **Module** — Interface for modular components with HTTP and message handlers
-- **Publisher** — Interface for publishing messages to the event bus via JetStream (implemented by the `nats` package)
+- **Publisher** — Interface for publishing to the event bus: `Publish` (raw bytes) and `PublishEvent` (builds a `core.Event` envelope and sends it on the canonical subject). Implemented by the `nats` package
 - **Subscriber** — Interface for subscribing to messages via core NATS (implemented by the `nats` package)
 - **Consumer** — Interface for consuming messages from durable JetStream work queues with explicit acknowledgement
 - **Msg** — A message received from a Consumer, with Ack/Nak/InProgress/Term methods
+- **Runner** — A long-lived background loop (`Run(ctx)`) — the job, schedule, rules, and realtime loops. `main` starts them uniformly via a `[]app.Runner`
 
 ## Module Interface
 
@@ -27,6 +28,10 @@ Modules receive their dependencies (archive, publisher) via setter methods, not 
 ## NATS Isolation
 
 The `app` package has **no NATS imports**. All NATS code lives in the dedicated `nats/` package. The app receives a `Subscriber` for registering message handlers and modules receive a `Publisher` for event publishing — both are interfaces defined in `app`.
+
+## Logging
+
+The application configures one `slog` handler via `slog.SetDefault` at bootstrap (in `main`). The `app` package, every module, and every runner log through the package-level `slog` functions and never construct their own logger.
 
 ## Module Mounting
 

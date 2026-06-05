@@ -31,10 +31,12 @@ All entities use **UUID v7** as their primary key and carry a human-friendly **s
 - `ResourceStatus`, `JobStatus` — lifecycle tracking
 - `RateLimit` — per-source/sink rate limiting configuration
 
+Canonical valid-sets live here too: `ConditionOp.Valid()`, `ActionType.Valid()`, `ValidateConditions`, and `ScheduleActionJobType` keep validation in core rather than re-implemented per module.
+
 ## Archive Interface
 
 `archive.go` defines the `Archive` interface — the contract for persistent storage. Implementations handle repositories, nodes, edges, threads, annotations, and sequence generation for short IDs.
 
 ## Event System
 
-`events.go` defines the `Event` struct and payload types. Events use the canonical subject format `repo.{repo_id}.events.{EventType}`.
+`events.go` defines the `Event` envelope and per-entity payload types (Node, Edge, Thread, Annotation, Repository, Filter, Source, Sink, Schedule, Rule). `NewEvent` builds the envelope and `Event.Subject()` gives its canonical subject `repo.{repo_id}.events.{EventType}`. `subjects.go` adds `JobSubject` and `ScheduleTriggerSubject` for the work-queue streams. core owns the wire scheme; the publish *implementation* (marshal + send) lives in the `nats` publisher behind `app.Publisher`.
