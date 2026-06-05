@@ -18,8 +18,13 @@ type Annotation struct {
 	Node       Node      `json:"node"`
 	Edge       Edge      `json:"edge"`
 	Motivation string    `json:"motivation"`
-	CreatedBy  uuid.UUID `json:"created_by"`
-	Version    int       `json:"version"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	// SourceID and ExternalID record ingestion provenance: which Source produced
+	// this annotation and its stable identifier in the source system. Both nil for
+	// locally-created annotations. Together they give idempotent re-ingestion.
+	SourceID   *uuid.UUID `json:"source_id,omitempty"`
+	ExternalID *string    `json:"external_id,omitempty"`
+	CreatedBy  uuid.UUID  `json:"created_by"`
+	Version    int        `json:"version"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }

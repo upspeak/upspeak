@@ -37,18 +37,23 @@ type Node struct {
 
 // Edge represents a relationship between two nodes in a knowledge graph.
 type Edge struct {
-	ID        uuid.UUID `json:"id"`
-	ShortID   string    `json:"short_id"`
-	RepoID    uuid.UUID `json:"repo_id"`
-	Type      string    `json:"type"`
-	Source    uuid.UUID `json:"source"`
-	Target    uuid.UUID `json:"target"`
-	Label     string    `json:"label"`
-	Weight    float64   `json:"weight"`
-	CreatedBy uuid.UUID `json:"created_by"`
-	Version   int       `json:"version"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID      uuid.UUID `json:"id"`
+	ShortID string    `json:"short_id"`
+	RepoID  uuid.UUID `json:"repo_id"`
+	Type    string    `json:"type"`
+	Source  uuid.UUID `json:"source"`
+	Target  uuid.UUID `json:"target"`
+	Label   string    `json:"label"`
+	Weight  float64   `json:"weight"`
+	// SourceID and ExternalID record ingestion provenance: which Source produced
+	// this edge and its stable identifier in the source system. Both nil for
+	// locally-created edges. Together they give idempotent re-ingestion.
+	SourceID   *uuid.UUID `json:"source_id,omitempty"`
+	ExternalID *string    `json:"external_id,omitempty"`
+	CreatedBy  uuid.UUID  `json:"created_by"`
+	Version    int        `json:"version"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // User represents an identity in the system. Users are global — they are not

@@ -13,6 +13,7 @@ import (
 type IngestBatch struct {
 	Threads     []IngestThread     `json:"threads,omitempty"`     // conversations → Threads
 	Items       []IngestItem       `json:"items,omitempty"`       // messages/posts → Nodes (+ reply Edges)
+	Edges       []IngestEdge       `json:"edges,omitempty"`       // explicit relationships → Edges
 	Annotations []IngestAnnotation `json:"annotations,omitempty"` // reactions/likes → Annotations
 	Tombstones  []string           `json:"tombstones,omitempty"`  // external IDs to redact/delete
 	Cursor      *IngestCursor      `json:"cursor,omitempty"`      // advanced cursor (nil = unchanged)
@@ -24,6 +25,18 @@ type IngestThread struct {
 	ExternalThreadID string     `json:"external_thread_id"`
 	Subject          string     `json:"subject"`
 	Metadata         []Metadata `json:"metadata,omitempty"`
+}
+
+// IngestEdge is one explicit relationship between two external entities. The
+// pipeline resolves SourceExternalID/TargetExternalID to the destination repo's
+// node UUIDs via node provenance and skips the edge when either is absent.
+type IngestEdge struct {
+	ExternalID       string  `json:"external_id"`
+	SourceExternalID string  `json:"source_external_id"`
+	TargetExternalID string  `json:"target_external_id"`
+	Type             string  `json:"type"`
+	Label            string  `json:"label,omitempty"`
+	Weight           float64 `json:"weight,omitempty"`
 }
 
 // IngestItem is one external message/post projected toward the graph. The
