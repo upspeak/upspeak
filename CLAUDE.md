@@ -196,10 +196,10 @@ YAML-based; see `upspeak.sample.yaml` for the full structure. First-time setup: 
 
 ## Implementation Plan
 
-The full API foundation is implemented in 6 phases. See `docs/specs/api-foundation/` for the complete spec and `docs/superpowers/plans/2026-03-30-api-foundation.md` for the implementation plan.
+The API foundation is built in 6 phases. `assets/high-level-concepts-0.1.png` is the defining data-flow architecture; `docs/next-steps.md` tracks current status, the remaining work to API completion, and the in-code stub inventory.
 
-**Completed:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass, NATS hardening pass, Phase 3 (filters + jobs), Phase 4 (connectors + schedules), Phase 5 (rules + search)
-**Next:** Phase 6 (real-time + sync)
+**Shipped:** Phase 1 (foundation), Phase 2 (knowledge graph), Correction Pass, NATS hardening pass, Phase 3 (filters + jobs), Phase 4 (connectors + schedules), Phase 5 (rules + search), Phase 6a (real-time WebSocket)
+**Next:** Phase 6b (multi-device sync). Social/federation features are deferred to Phase 7+.
 
 ## Common Pitfalls
 

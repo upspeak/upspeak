@@ -41,7 +41,7 @@ Upspeak is designed as personal-first, federated knowledge infrastructure. While
 - **Social knowledge sharing**: Users will be able to publish curated threads and collections with visibility controls, and other users will be able to follow and pull shared content into their own repositories
 - **Repo chaining**: Repositories can subscribe to other repositories as sources, with filters controlling what flows between them — enabling collaborative knowledge pipelines across users and instances
 
-See `docs/specs/api-foundation/` for the complete API specification.
+The HTTP API is defined by the module handlers under `repo/`, `filter/`, `jobs/`, `connector/`, `scheduler/`, `rules/`, `search/`, and `realtime/`. See `docs/next-steps.md` for current status and the remaining work to complete the API.
 
 ## Implementation Progress
 
@@ -49,8 +49,9 @@ See `docs/specs/api-foundation/` for the complete API specification.
 - [x] **Phase 2: Knowledge Graph** — Nodes, edges, threads, annotations, flat URL routing, optimistic concurrency
 - [x] **Phase 3: Filters + Jobs** — Filter CRUD, condition evaluation engine, job tracking, NATS job runner
 - [x] **Phase 4: Connectors + Schedules** — Sources, sinks, collect/publish actions, rate limiting, cron scheduling, job execution with history
-- [ ] **Phase 5: Rules + Search** — Rule engine, FTS5 search, graph traversal
-- [ ] **Phase 6: Real-time + Sync** — WebSocket events, multi-device sync, conflict resolution
+- [x] **Phase 5: Rules + Search** — Rule engine, FTS5 search, graph traversal
+- [x] **Phase 6a: Real-time** — WebSocket events, Hub fan-out, server-side filtering
+- [ ] **Phase 6b: Sync** — Multi-device sync, conflict resolution (see `docs/next-steps.md`)
 
 ## Develop
 
