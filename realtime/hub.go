@@ -80,14 +80,28 @@ func (h *hub) dispatch(ev *core.Event) {
 	}
 	h.mu.RUnlock()
 
+	// Encode the event body once: only the channel field differs per recipient,
+	// so the body is reused across every matching subscription instead of being
+	// re-marshalled per (connection, subscription) pair.
+	body, err := json.Marshal(outboundEventBody{
+		ID:        ev.ID,
+		Type:      ev.Type,
+		Data:      ev.Payload,
+		Timestamp: ev.Timestamp,
+	})
+	if err != nil {
+		h.logger.Warn("realtime: failed to encode event", "error", err)
+		return
+	}
+
 	for _, c := range conns {
 		for _, sub := range c.snapshotSubs() {
 			if !sub.matchEvent(ev) {
 				continue
 			}
-			frame, err := buildOutbound(sub.channel, ev)
+			frame, err := buildFrame(sub.channel, body)
 			if err != nil {
-				h.logger.Warn("realtime: failed to encode event", "error", err)
+				h.logger.Warn("realtime: failed to encode frame", "error", err)
 				continue
 			}
 			c.enqueue(frame)
@@ -107,15 +121,9 @@ func (h *hub) run(ctx context.Context) {
 	}
 }
 
-// buildOutbound encodes the server-to-client envelope for an event on a channel.
-func buildOutbound(channel string, ev *core.Event) ([]byte, error) {
-	return json.Marshal(outboundEvent{
-		Channel: channel,
-		Event: outboundEventBody{
-			ID:        ev.ID,
-			Type:      ev.Type,
-			Data:      ev.Payload,
-			Timestamp: ev.Timestamp,
-		},
-	})
+// buildFrame wraps a pre-encoded event body in the channel envelope. The body is
+// inserted verbatim (json.RawMessage), so one encoded body is reused across every
+// recipient without re-marshalling the event payload per channel.
+func buildFrame(channel string, body json.RawMessage) ([]byte, error) {
+	return json.Marshal(outboundFrame{Channel: channel, Event: body})
 }
