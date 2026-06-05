@@ -140,3 +140,39 @@ type EventRepoPayload struct {
 type EventRepoDeletePayload struct {
 	RepoID uuid.UUID `json:"repo_id"`
 }
+
+// Filter event payloads.
+
+// EventFilterPayload carries filter data for filter events. Like the other
+// entity payloads it nests the entity under a stable key ("filter") so event
+// consumers (the rules engine's dot-path filters, the realtime fan-out) read a
+// consistent shape across create, update, and delete.
+type EventFilterPayload struct {
+	Filter *Filter `json:"filter"`
+}
+
+// Source and sink event payloads.
+
+// EventSourcePayload carries source data for source events.
+type EventSourcePayload struct {
+	Source *Source `json:"source"`
+}
+
+// EventSinkPayload carries sink data for sink events.
+type EventSinkPayload struct {
+	Sink *Sink `json:"sink"`
+}
+
+// Schedule event payloads.
+
+// EventSchedulePayload carries schedule data for schedule events.
+type EventSchedulePayload struct {
+	Schedule *Schedule `json:"schedule"`
+}
+
+// Rule event payloads.
+
+// EventRulePayload carries rule data for rule events.
+type EventRulePayload struct {
+	Rule *Rule `json:"rule"`
+}
