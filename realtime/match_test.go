@@ -27,6 +27,18 @@ func nodeDeletedEvent(t *testing.T, repoID, nodeID uuid.UUID) *core.Event {
 	return ev
 }
 
+func nodeUpdatedEvent(t *testing.T, repoID, nodeID uuid.UUID, nodeType string) *core.Event {
+	t.Helper()
+	ev, err := core.NewEvent(core.EventNodeUpdated, repoID, core.EventNodeUpdatePayload{
+		NodeID:      nodeID,
+		UpdatedNode: &core.Node{ID: nodeID, RepoID: repoID, Type: nodeType},
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+	return ev
+}
+
 func TestMatchEvent_RepoChannel(t *testing.T) {
 	repo := uuid.New()
 	other := uuid.New()
@@ -86,6 +98,23 @@ func TestMatchEvent_NodeTypeFilterBestEffort(t *testing.T) {
 	}
 	if !sub.matchEvent(nodeDeletedEvent(t, repo, uuid.New())) {
 		t.Error("delete should pass since node_type cannot be evaluated")
+	}
+}
+
+func TestMatchEvent_NodeTypeFilterUpdate(t *testing.T) {
+	repo := uuid.New()
+	sub := &subscription{
+		kind:   channelRepoEvents,
+		repoID: repo,
+		filter: &subFilter{NodeType: []string{"article"}},
+	}
+	// Update payloads carry the full node (UpdatedNode), so the node_type filter
+	// applies to them as well, not only to create events.
+	if !sub.matchEvent(nodeUpdatedEvent(t, repo, uuid.New(), "article")) {
+		t.Error("article update should pass node_type filter")
+	}
+	if sub.matchEvent(nodeUpdatedEvent(t, repo, uuid.New(), "note")) {
+		t.Error("note update should be excluded by node_type filter")
 	}
 }
 

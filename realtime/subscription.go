@@ -134,13 +134,18 @@ func resolveChannel(pc parsedChannel, filter *subFilter, r refResolver) (*subscr
 }
 
 // expectedEntityType returns the entity type a channel kind's ref must resolve
-// to, or "" when no type constraint applies (e.g. rule actions, still a stub).
+// to, or "" when no type constraint applies. A rule-actions ref must resolve to
+// a rule even though delivery on that channel is still a stub, so a wrong-typed
+// ref (e.g. a node short ID) is rejected at subscribe time rather than silently
+// accepted as a dead subscription.
 func expectedEntityType(kind channelKind) string {
 	switch kind {
 	case channelNode:
 		return "node"
 	case channelThread:
 		return "thread"
+	case channelRuleActions:
+		return "rule"
 	default:
 		return ""
 	}

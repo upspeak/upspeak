@@ -53,9 +53,9 @@ func (f *subFilter) matchEventType(ev *core.Event) bool {
 	return false
 }
 
-// matchNodeType applies the optional node_type filter. It is best-effort: only
-// create events carry a full node, so events without one (update/patch/delete)
-// are not excluded by this filter.
+// matchNodeType applies the optional node_type filter. Create, update, and patch
+// events carry the full node, so they are filtered by its type; events without
+// an embedded node (e.g. delete) cannot be evaluated and are not excluded.
 func (f *subFilter) matchNodeType(ev *core.Event) bool {
 	if f == nil || len(f.NodeType) == 0 {
 		return true
@@ -72,18 +72,28 @@ func (f *subFilter) matchNodeType(ev *core.Event) bool {
 	return false
 }
 
-// nodeFromPayload extracts the embedded node from a NodeCreated payload. It
-// returns nil for every other event type, since only create payloads carry a
-// full node.
+// nodeFromPayload extracts the embedded node from a node event payload. Create
+// events carry it as Node; NodeUpdated and NodePatched both carry it as
+// UpdatedNode (the repo module publishes both with EventNodeUpdatePayload).
+// Delete events carry no node, so it returns nil there and the node_type filter
+// lets them through.
 func nodeFromPayload(ev *core.Event) *core.Node {
-	if ev.Type != core.EventNodeCreated {
+	switch ev.Type {
+	case core.EventNodeCreated:
+		var p core.EventNodeCreatePayload
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			return nil
+		}
+		return p.Node
+	case core.EventNodeUpdated, core.EventNodePatched:
+		var p core.EventNodeUpdatePayload
+		if err := json.Unmarshal(ev.Payload, &p); err != nil {
+			return nil
+		}
+		return p.UpdatedNode
+	default:
 		return nil
 	}
-	var p core.EventNodeCreatePayload
-	if err := json.Unmarshal(ev.Payload, &p); err != nil {
-		return nil
-	}
-	return p.Node
 }
 
 // eventReferencesNode reports whether the event's payload references nodeID.
@@ -93,11 +103,9 @@ func eventReferencesNode(ev *core.Event, nodeID uuid.UUID) bool {
 	case core.EventNodeCreated:
 		var p core.EventNodeCreatePayload
 		return json.Unmarshal(ev.Payload, &p) == nil && p.Node != nil && p.Node.ID == nodeID
-	case core.EventNodeUpdated:
+	case core.EventNodeUpdated, core.EventNodePatched:
+		// Both are published with EventNodeUpdatePayload by the repo module.
 		var p core.EventNodeUpdatePayload
-		return json.Unmarshal(ev.Payload, &p) == nil && p.NodeID == nodeID
-	case core.EventNodePatched:
-		var p core.EventNodePatchPayload
 		return json.Unmarshal(ev.Payload, &p) == nil && p.NodeID == nodeID
 	case core.EventNodeDeleted:
 		var p core.EventNodeDeletePayload
