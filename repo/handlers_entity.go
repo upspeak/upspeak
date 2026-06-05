@@ -277,7 +277,7 @@ func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Publish update event.
-	m.publishFilterEvent(repo.ID, core.EventFilterUpdated, existing)
+	m.publishEvent(repo.ID, core.EventFilterUpdated, core.EventFilterPayload{Filter: existing})
 
 	api.SetETag(w, existing.Version)
 	api.WriteJSON(w, http.StatusOK, existing)
@@ -311,19 +311,6 @@ func validateFilterConditions(conditions []core.Condition) error {
 		}
 	}
 	return nil
-}
-
-// publishFilterEvent publishes a filter event if a publisher is configured.
-func (m *Module) publishFilterEvent(repoID uuid.UUID, eventType core.EventType, data any) {
-	if m.pub == nil {
-		return
-	}
-	payload, err := json.Marshal(data)
-	if err != nil {
-		return
-	}
-	subject := "repo." + repoID.String() + ".events." + string(eventType)
-	_ = m.pub.Publish(subject, payload)
 }
 
 // testFilterViaFlatURL handles POST /repos/{repo_ref}/FILTER-3/test via entity sub dispatch.
@@ -390,7 +377,7 @@ func (m *Module) deleteEntity(w http.ResponseWriter, r *http.Request, entityType
 		}
 		err = m.archive.DeleteFilter(id)
 		if err == nil {
-			m.publishFilterEvent(repo.ID, core.EventFilterDeleted, f)
+			m.publishEvent(repo.ID, core.EventFilterDeleted, core.EventFilterPayload{Filter: f})
 		}
 	default:
 		api.WriteError(w, http.StatusNotFound, "not_found", "Unknown entity type")
@@ -415,4 +402,3 @@ func safeParseUUID(s string) uuid.UUID {
 	}
 	return id
 }
-

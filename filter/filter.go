@@ -120,7 +120,7 @@ func (m *Module) createFilterHandler() http.HandlerFunc {
 			return
 		}
 
-		m.publishEvent(repo.ID, core.EventFilterCreated, filter)
+		m.publishEvent(repo.ID, core.EventFilterCreated, core.EventFilterPayload{Filter: filter})
 
 		api.SetETag(w, filter.Version)
 		api.WriteJSON(w, http.StatusCreated, filter)
@@ -230,21 +230,26 @@ func (m *Module) resolveFilter(w http.ResponseWriter, repoID uuid.UUID, ref stri
 	return f, nil
 }
 
-// publishEvent publishes an event to JetStream if a publisher is configured.
-func (m *Module) publishEvent(repoID uuid.UUID, eventType core.EventType, data any) {
+// publishEvent publishes an event to JetStream if a publisher is configured. It
+// wraps the payload in a core.Event envelope via core.NewEvent, the same shape
+// every other module emits, so consumers (the rules engine, realtime fan-out)
+// can decode it as a core.Event.
+func (m *Module) publishEvent(repoID uuid.UUID, eventType core.EventType, payload any) {
 	if m.pub == nil {
 		return
 	}
-
-	payload, err := json.Marshal(data)
+	evt, err := core.NewEvent(eventType, repoID, payload)
 	if err != nil {
-		m.logger.Error("Failed to marshal event payload", "error", err)
+		m.logger.Error("Failed to create event", "type", eventType, "error", err)
 		return
 	}
-
-	subject := "repo." + repoID.String() + ".events." + string(eventType)
-	if err := m.pub.Publish(subject, payload); err != nil {
-		m.logger.Error("Failed to publish event", "subject", subject, "error", err)
+	data, err := json.Marshal(evt)
+	if err != nil {
+		m.logger.Error("Failed to marshal event", "type", eventType, "error", err)
+		return
+	}
+	if err := m.pub.Publish(evt.Subject(), data); err != nil {
+		m.logger.Error("Failed to publish event", "subject", evt.Subject(), "error", err)
 	}
 }
 
