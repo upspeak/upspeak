@@ -5,7 +5,6 @@
 package rules
 
 import (
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -24,7 +23,6 @@ var defaultOwnerID = uuid.MustParse("00000000-0000-7000-8000-000000000001")
 type Module struct {
 	archive core.Archive
 	pub     app.Publisher
-	logger  *slog.Logger
 }
 
 // Name returns the module name.
@@ -32,8 +30,7 @@ func (m *Module) Name() string { return "rules" }
 
 // Init initialises the rules module.
 func (m *Module) Init(_ map[string]any) error {
-	m.logger = slog.Default().With("module", "rules")
-	m.logger.Info("Initialised rules module")
+	slog.Info("Initialised rules module")
 	return nil
 }
 
@@ -63,23 +60,14 @@ func (m *Module) HTTPHandlers() []app.HTTPHandler {
 // in InitModules, so the module registers none here.
 func (m *Module) MsgHandlers() []app.MsgHandler { return []app.MsgHandler{} }
 
-// publishEvent publishes a domain event to the NATS JetStream stream.
+// publishEvent delegates domain event publishing to the injected Publisher.
+// The Publisher builds the core.Event envelope and confirms persistence before returning.
 func (m *Module) publishEvent(repoID uuid.UUID, eventType core.EventType, payload any) {
 	if m.pub == nil {
 		return
 	}
-	evt, err := core.NewEvent(eventType, repoID, payload)
-	if err != nil {
-		m.logger.Error("Failed to create event", "error", err)
-		return
-	}
-	data, err := json.Marshal(evt)
-	if err != nil {
-		m.logger.Error("Failed to marshal event", "error", err)
-		return
-	}
-	if err := m.pub.Publish(evt.Subject(), data); err != nil {
-		m.logger.Error("Failed to publish event", "subject", evt.Subject(), "error", err)
+	if err := m.pub.PublishEvent(eventType, repoID, payload); err != nil {
+		slog.Error("Failed to publish event", "type", eventType, "error", err)
 	}
 }
 
