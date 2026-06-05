@@ -9,7 +9,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +22,6 @@ import (
 type Module struct {
 	archive  core.Archive
 	consumer app.Consumer
-	logger   *slog.Logger
 }
 
 // Name returns the module name.
@@ -33,8 +31,7 @@ func (m *Module) Name() string {
 
 // Init initialises the jobs module.
 func (m *Module) Init(_ map[string]any) error {
-	m.logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	m.logger.Info("Initialised jobs module")
+	slog.Info("Initialised jobs module")
 	return nil
 }
 
@@ -180,7 +177,7 @@ func CreateJob(archive core.Archive, pub app.Publisher, repoID, createdBy uuid.U
 		if err != nil {
 			return job, nil // Job is saved but publish failed; runner won't pick it up.
 		}
-		subject := "jobs." + string(jobType) + "." + job.ID.String()
+		subject := core.JobSubject(jobType, job.ID)
 		_ = pub.Publish(subject, payload) // Best-effort publish.
 	}
 
