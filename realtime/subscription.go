@@ -5,10 +5,25 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/upspeak/upspeak/core"
 )
 
 // errSubscriptionLimit is returned when a connection exceeds maxSubscriptions.
 var errSubscriptionLimit = fmt.Errorf("subscription limit reached")
+
+// defaultOwnerID scopes repo-ref resolution to the single local user. Multi-user
+// ownership is deferred (see Phase 5/6 scope), so realtime resolves repo refs
+// under the same fixed owner the repo module uses.
+var defaultOwnerID = uuid.MustParse("00000000-0000-7000-8000-000000000001")
+
+// refResolver is the narrow slice of core.Archive the realtime module needs to
+// turn client channel refs (UUID, short ID, or slug) into canonical UUIDs.
+// core.Archive satisfies it.
+type refResolver interface {
+	ResolveRepoRef(ownerID uuid.UUID, ref string) (*core.Repository, error)
+	ResolveRef(repoID uuid.UUID, ref string) (uuid.UUID, string, error)
+}
 
 // channelKind enumerates the channel families a client can subscribe to.
 type channelKind int
@@ -33,10 +48,10 @@ type parsedChannel struct {
 
 // subscription is a resolved, active subscription stored on a connection.
 type subscription struct {
-	channel  string      // raw channel string; the map key and echoed to client
+	channel  string // raw channel string; the map key and echoed to client
 	kind     channelKind
-	repoID   uuid.UUID   // resolved repo UUID for repo-scoped channels
-	entityID uuid.UUID   // resolved node/thread UUID where applicable
+	repoID   uuid.UUID // resolved repo UUID for repo-scoped channels
+	entityID uuid.UUID // resolved node/thread UUID where applicable
 	filter   *subFilter
 }
 
@@ -81,5 +96,52 @@ func parseRepoChannel(channel string, parts []string) (parsedChannel, error) {
 		return parsedChannel{kind: channelRuleActions, raw: channel, repoRef: repoRef, entityRef: parts[3]}, nil
 	default:
 		return parsedChannel{}, fmt.Errorf("invalid repo channel %q", channel)
+	}
+}
+
+// resolveChannel turns a parsed channel into an active subscription, resolving
+// any repo and entity refs to canonical UUIDs and attaching the optional filter.
+// It returns an error when a ref cannot be resolved, which the caller surfaces
+// to the client as an invalid_channel error.
+func resolveChannel(pc parsedChannel, filter *subFilter, r refResolver) (*subscription, error) {
+	sub := &subscription{channel: pc.raw, kind: pc.kind, filter: filter}
+
+	// Stub channels (jobs, sync) carry no backing events yet, so they need no
+	// ref resolution; they are accepted structurally and never match.
+	if pc.kind == channelSync || pc.kind == channelJob {
+		return sub, nil
+	}
+
+	repo, err := r.ResolveRepoRef(defaultOwnerID, pc.repoRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve repo %q: %w", pc.repoRef, err)
+	}
+	sub.repoID = repo.ID
+
+	if pc.entityRef == "" {
+		return sub, nil // repo-events channel; nothing more to resolve.
+	}
+
+	id, typ, err := r.ResolveRef(repo.ID, pc.entityRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve ref %q: %w", pc.entityRef, err)
+	}
+	if want := expectedEntityType(pc.kind); want != "" && typ != want {
+		return nil, fmt.Errorf("ref %q is a %s, not a %s", pc.entityRef, typ, want)
+	}
+	sub.entityID = id
+	return sub, nil
+}
+
+// expectedEntityType returns the entity type a channel kind's ref must resolve
+// to, or "" when no type constraint applies (e.g. rule actions, still a stub).
+func expectedEntityType(kind channelKind) string {
+	switch kind {
+	case channelNode:
+		return "node"
+	case channelThread:
+		return "thread"
+	default:
+		return ""
 	}
 }
