@@ -24,3 +24,14 @@ func JobSubject(jobType JobType, jobID uuid.UUID) string {
 func ScheduleTriggerSubject(scheduleID uuid.UUID) string {
 	return fmt.Sprintf("schedules.trigger.%s", scheduleID.String())
 }
+
+// SinkEventsSubjectAll matches every Sink's curated outbound events. Used as the
+// JetStream stream subject and as the ingest supervisor's consumer filter.
+const SinkEventsSubjectAll = "sink.*.events.>"
+
+// SinkSubject returns the canonical subject for a Sink's curated outbound event.
+// Format: sink.{sink_id}.events.{EventType}. The publish supervisor publishes
+// here; a subscribing repo's ingest supervisor consumes it.
+func SinkSubject(sinkID uuid.UUID, eventType EventType) string {
+	return fmt.Sprintf("sink.%s.events.%s", sinkID.String(), eventType)
+}
