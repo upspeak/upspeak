@@ -4,7 +4,7 @@ description: Use when working on the Upspeak codebase — implementing features,
 compatibility: Designed for Claude Code. Requires Go 1.25+, SQLite (mattn/go-sqlite3), google/uuid
 metadata:
   author: upspeak
-  version: "0.6"
+  version: "0.7"
 ---
 
 # Upspeak Development
@@ -14,6 +14,14 @@ metadata:
 Upspeak is a personal-first, federated knowledge infrastructure. API-first (no bundled UI), hybrid sync core + NATS JetStream, local-first with offline writes.
 
 Read `CLAUDE.md` at the project root for coding conventions, naming, error handling, and testing standards. This skill covers architecture and domain knowledge that CLAUDE.md cannot capture.
+
+## Companion Skills
+
+When working in this repo, invoke these auto-discovered skills (via the `Skill` tool) at the right moments — they live alongside this one under `.claude/skills/`:
+
+- **`go-style`** — idiomatic Go practices (naming, error handling, interfaces, concurrency, HTTP/JSON, testing). Consult when writing or reviewing any `*.go` file. Project conventions in `CLAUDE.md` and the patterns in `app/`/`core/` take precedence where they conflict (notably: en-IN comments, package-level `slog`, root-level module layout — no `cmd/`/`pkg/`/`internal/`).
+- **`create-architectural-decision-record`** — generate a structured ADR in `docs/adr/adr-NNNN-*.md` when making a non-trivial architecture or technology decision (e.g. the global-vs-per-repo `REPO_EVENTS` choice, the typed-self-contained-URL divergence). Capture context, decision, consequences, and rejected alternatives.
+- **`documentation-writer`** — a Diátaxis-framework technical writer for tutorials, how-to guides, reference, and explanation docs. Use when authoring or restructuring anything under `docs/` (write in en-IN; prefer linking to source over duplicating structure that drifts).
 
 ## Architecture
 
