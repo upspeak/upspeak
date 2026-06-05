@@ -2,6 +2,7 @@ package archive
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/upspeak/upspeak/core"
@@ -420,7 +421,7 @@ func TestGetNodeAnnotations(t *testing.T) {
 				ID:        core.NewID(),
 				RepoID:    repo.ID,
 				Type:      "annotation",
-				Source:     core.NewID(), // will be the annotation node ID after save
+				Source:    core.NewID(), // will be the annotation node ID after save
 				Target:    target.ID,
 				Weight:    1.0,
 				CreatedBy: testOwnerID,
@@ -445,5 +446,45 @@ func TestGetNodeAnnotations(t *testing.T) {
 	}
 	if len(annotations) != 2 {
 		t.Errorf("Expected 2 annotations, got %d", len(annotations))
+	}
+}
+
+func TestSaveNode_Provenance_AndLookup(t *testing.T) {
+	a := setupTestArchive(t)
+	repo := createTestRepo(t, a)
+
+	srcID := core.NewID()
+	ext := "discourse:post:42"
+	node := &core.Node{
+		ID:          core.NewID(),
+		RepoID:      repo.ID,
+		Type:        "post",
+		Subject:     "Hello",
+		ContentType: "text/plain",
+		CreatedBy:   repo.OwnerID,
+		SourceID:    &srcID,
+		ExternalID:  &ext,
+	}
+	if err := a.SaveNode(node); err != nil {
+		t.Fatalf("SaveNode: %v", err)
+	}
+
+	got, err := a.GetNodeBySourceExternalID(srcID, ext)
+	if err != nil {
+		t.Fatalf("GetNodeBySourceExternalID: %v", err)
+	}
+	if got.ID != node.ID {
+		t.Fatalf("got node %s, want %s", got.ID, node.ID)
+	}
+	if got.SourceID == nil || *got.SourceID != srcID {
+		t.Fatalf("source_id not persisted: %v", got.SourceID)
+	}
+	if got.ExternalID == nil || *got.ExternalID != ext {
+		t.Fatalf("external_id not persisted: %v", got.ExternalID)
+	}
+
+	_, err = a.GetNodeBySourceExternalID(srcID, "nope")
+	if !errors.As(err, new(*core.ErrorNotFound)) {
+		t.Fatalf("expected ErrorNotFound, got %v", err)
 	}
 }

@@ -39,10 +39,11 @@ func (a *LocalArchive) saveNode(node *core.Node) error {
 		node.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, node.ID.String(), node.ShortID, node.RepoID.String(), node.Type, node.Subject,
-			node.ContentType, string(metadataJSON), node.CreatedBy.String(),
+			node.ContentType, string(metadataJSON), uuidPtrString(node.SourceID), strPtrAny(node.ExternalID),
+			node.CreatedBy.String(),
 			node.Version, node.CreatedAt.Format(time.RFC3339), node.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to insert node: %w", err)
@@ -134,10 +135,11 @@ func (a *LocalArchive) saveBatchNodes(nodes []*core.Node) error {
 		node.UpdatedAt = now
 
 		_, err = tx.Exec(`
-			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO nodes (id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, node.ID.String(), node.ShortID, node.RepoID.String(), node.Type, node.Subject,
-			node.ContentType, string(metadataJSON), node.CreatedBy.String(),
+			node.ContentType, string(metadataJSON), uuidPtrString(node.SourceID), strPtrAny(node.ExternalID),
+			node.CreatedBy.String(),
 			node.Version, node.CreatedAt.Format(time.RFC3339), node.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to insert node in batch: %w", err)
@@ -163,7 +165,7 @@ func (a *LocalArchive) saveBatchNodes(nodes []*core.Node) error {
 // getNode retrieves a node by UUID, including body content from file.
 func (a *LocalArchive) getNode(nodeID uuid.UUID) (*core.Node, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at
 		FROM nodes WHERE id = ?
 	`, nodeID.String())
 
@@ -237,7 +239,7 @@ func (a *LocalArchive) listNodes(repoID uuid.UUID, opts core.NodeListOptions) ([
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at
 		 FROM nodes %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -425,10 +427,10 @@ func (a *LocalArchive) readNodeBody(nodeID uuid.UUID) (json.RawMessage, error) {
 func scanNodeFromSingleRow(row *sql.Row) (*core.Node, error) {
 	var node core.Node
 	var idStr, repoIDStr, createdByStr, createdAt, updatedAt string
-	var metadataStr sql.NullString
+	var metadataStr, sourceIDStr, externalIDStr sql.NullString
 
 	err := row.Scan(&idStr, &node.ShortID, &repoIDStr, &node.Type, &node.Subject,
-		&node.ContentType, &metadataStr, &createdByStr,
+		&node.ContentType, &metadataStr, &sourceIDStr, &externalIDStr, &createdByStr,
 		&node.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("node", "")
@@ -437,7 +439,7 @@ func scanNodeFromSingleRow(row *sql.Row) (*core.Node, error) {
 		return nil, fmt.Errorf("failed to scan node: %w", err)
 	}
 
-	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, createdAt, updatedAt)
+	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, sourceIDStr, externalIDStr, createdAt, updatedAt)
 }
 
 // scanNodeFromRow scans a node from a *sql.Rows iterator.
@@ -445,20 +447,20 @@ func scanNodeFromSingleRow(row *sql.Row) (*core.Node, error) {
 func scanNodeFromRow(rows *sql.Rows) (*core.Node, error) {
 	var node core.Node
 	var idStr, repoIDStr, createdByStr, createdAt, updatedAt string
-	var metadataStr sql.NullString
+	var metadataStr, sourceIDStr, externalIDStr sql.NullString
 
 	err := rows.Scan(&idStr, &node.ShortID, &repoIDStr, &node.Type, &node.Subject,
-		&node.ContentType, &metadataStr, &createdByStr,
+		&node.ContentType, &metadataStr, &sourceIDStr, &externalIDStr, &createdByStr,
 		&node.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan node row: %w", err)
 	}
 
-	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, createdAt, updatedAt)
+	return parseNodeFields(&node, idStr, repoIDStr, createdByStr, metadataStr, sourceIDStr, externalIDStr, createdAt, updatedAt)
 }
 
 // parseNodeFields populates a Node's parsed fields from raw scanned strings.
-func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, metadataStr sql.NullString, createdAt, updatedAt string) (*core.Node, error) {
+func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, metadataStr, sourceIDStr, externalIDStr sql.NullString, createdAt, updatedAt string) (*core.Node, error) {
 	var err error
 
 	node.ID, err = uuid.Parse(idStr)
@@ -480,6 +482,18 @@ func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, met
 		}
 	}
 
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse node source_id: %w", err)
+		}
+		node.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		node.ExternalID = &ext
+	}
+
 	node.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse node created_at: %w", err)
@@ -490,6 +504,43 @@ func parseNodeFields(node *core.Node, idStr, repoIDStr, createdByStr string, met
 	}
 
 	return node, nil
+}
+
+// getNodeBySourceExternalID finds a node by its ingestion provenance, used for
+// idempotent re-collection. Returns ErrorNotFound when no matching node exists.
+func (a *LocalArchive) getNodeBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Node, error) {
+	row := a.db.QueryRow(`
+		SELECT id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at
+		FROM nodes WHERE source_id = ? AND external_id = ?
+	`, sourceID.String(), externalID)
+
+	node, err := scanNodeFromSingleRow(row)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := a.readNodeBody(node.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read node body: %w", err)
+	}
+	node.Body = body
+	return node, nil
+}
+
+// uuidPtrString returns the UUID string for a non-nil pointer, or nil for SQL.
+func uuidPtrString(id *uuid.UUID) any {
+	if id == nil {
+		return nil
+	}
+	return id.String()
+}
+
+// strPtrAny returns the string for a non-nil pointer, or nil for SQL.
+func strPtrAny(s *string) any {
+	if s == nil {
+		return nil
+	}
+	return *s
 }
 
 // indexNodeForSearch indexes a node for full-text search. Only text content

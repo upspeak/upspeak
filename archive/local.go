@@ -175,6 +175,10 @@ func (a *LocalArchive) GetNodeAnnotations(nodeID uuid.UUID, opts core.Annotation
 	return a.getNodeAnnotations(nodeID, opts)
 }
 
+func (a *LocalArchive) GetNodeBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Node, error) {
+	return a.getNodeBySourceExternalID(sourceID, externalID)
+}
+
 // --- core.EdgeStore implementation ---
 
 func (a *LocalArchive) SaveEdge(edge *core.Edge) error {

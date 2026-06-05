@@ -282,7 +282,7 @@ func (a *LocalArchive) browseNodes(repoID uuid.UUID, opts core.BrowseOptions) ([
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, subject, content_type, metadata, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, subject, content_type, metadata, source_id, external_id, created_by, version, created_at, updated_at
  FROM nodes %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)

@@ -28,6 +28,9 @@ type NodeStore interface {
 	ListNodes(repoID uuid.UUID, opts NodeListOptions) ([]Node, int, error)
 	GetNodeEdges(nodeID uuid.UUID, opts EdgeQueryOptions) ([]Edge, int, error)
 	GetNodeAnnotations(nodeID uuid.UUID, opts AnnotationQueryOptions) ([]Annotation, int, error)
+	// GetNodeBySourceExternalID finds a node by ingestion provenance for
+	// idempotent re-collection. Returns ErrorNotFound when absent.
+	GetNodeBySourceExternalID(sourceID uuid.UUID, externalID string) (*Node, error)
 }
 
 // EdgeStore handles edge persistence.
