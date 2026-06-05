@@ -295,6 +295,9 @@ type webhookParams struct {
 	ContentType string `json:"content_type"`
 }
 
+// executeWebhook performs a one-shot URL collection: it dispatches to the
+// webhook adapter via the registry, then persists the result through the ingest
+// pipeline. The collected nodes carry no source provenance (ad-hoc ingestion).
 func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 	var params webhookParams
 	if len(job.Params) > 0 {
@@ -305,6 +308,8 @@ func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 	if params.URL == "" {
 		return nil, errors.New("url is required for webhook jobs")
 	}
+
+	slog.Info("Executing webhook job", "url", params.URL, "repo_id", job.RepoID)
 
 	adapter, ok := r.registry.AdapterFor(core.ConnectorWebhook)
 	if !ok {
