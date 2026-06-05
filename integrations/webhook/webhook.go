@@ -74,7 +74,7 @@ func (a *Adapter) Collect(ctx context.Context, req core.CollectRequest) (*core.I
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return nil, fmt.Errorf("build request for %s: %w", redactURL(url), err)
 	}
 	resp, err := a.client.Do(httpReq)
 	if err != nil {

@@ -177,3 +177,50 @@ func TestPipeline_NilBatch(t *testing.T) {
 		t.Fatalf("nil batch should produce zero result, got %+v", res)
 	}
 }
+
+// fakePublisher records the event types published, to verify the pipeline emits
+// domain events on the canonical write path.
+type fakePublisher struct{ events []core.EventType }
+
+func (f *fakePublisher) Publish(string, []byte) error { return nil }
+
+func (f *fakePublisher) PublishEvent(eventType core.EventType, _ uuid.UUID, _ any) error {
+	f.events = append(f.events, eventType)
+	return nil
+}
+
+func TestPipeline_PublishesEvents(t *testing.T) {
+	a := newTestArchive(t)
+	repo := newTestRepo(t, a)
+	fake := &fakePublisher{}
+	p := NewPipeline(a, fake)
+
+	src := &core.Source{
+		ID: core.NewID(), RepoID: repo.ID, Name: "s",
+		Connector: core.ConnectorWebhook, CreatedBy: repo.OwnerID,
+	}
+	if err := a.SaveSource(src); err != nil {
+		t.Fatalf("SaveSource: %v", err)
+	}
+	ctx := IngestContext{RepoID: repo.ID, Source: src, CreatedBy: repo.OwnerID}
+	mk := func(body string) *core.IngestBatch {
+		return &core.IngestBatch{Items: []core.IngestItem{{
+			ExternalID: "e1",
+			Node:       &core.Node{Type: "post", Subject: "s", ContentType: "text/plain", Body: textBody(body)},
+		}}}
+	}
+
+	if _, err := p.Ingest(ctx, mk("v1")); err != nil {
+		t.Fatalf("ingest create: %v", err)
+	}
+	if len(fake.events) != 1 || fake.events[0] != core.EventNodeCreated {
+		t.Fatalf("expected one NodeCreated event, got %v", fake.events)
+	}
+
+	if _, err := p.Ingest(ctx, mk("v2")); err != nil {
+		t.Fatalf("ingest update: %v", err)
+	}
+	if len(fake.events) != 2 || fake.events[1] != core.EventNodeUpdated {
+		t.Fatalf("expected a NodeUpdated event second, got %v", fake.events)
+	}
+}
