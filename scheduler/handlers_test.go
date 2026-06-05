@@ -28,6 +28,20 @@ p.published = append(p.published, publishedMsg{Subject: subject, Data: data})
 return nil
 }
 
+// PublishEvent builds a core.Event envelope and records it via Publish so tests
+// observe the same subject/data the nats publisher would emit.
+func (p *mockPublisher) PublishEvent(eventType core.EventType, repoID uuid.UUID, payload any) error {
+evt, err := core.NewEvent(eventType, repoID, payload)
+if err != nil {
+return err
+}
+data, err := json.Marshal(evt)
+if err != nil {
+return err
+}
+return p.Publish(evt.Subject(), data)
+}
+
 // setupTestModule creates a scheduler Module wired to a temporary archive.
 func setupTestModule(t *testing.T) *Module {
 t.Helper()

@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/api"
+	"github.com/upspeak/upspeak/core"
 )
 
 // HTTPHandler defines an HTTP route handler for a module.
@@ -31,7 +33,14 @@ type MsgHandler struct {
 // Publisher is the interface for publishing messages to the event bus.
 // Implementations are provided by infrastructure modules (e.g. nats).
 type Publisher interface {
+	// Publish sends raw bytes on a subject.
 	Publish(subject string, data []byte) error
+	// PublishEvent builds a core.Event envelope for the given type, repo, and
+	// payload and publishes it on the event's canonical subject. The envelope
+	// shape and subject scheme are owned by core; the implementation (nats)
+	// keeps every producer on the same wire format, so modules never marshal
+	// events themselves.
+	PublishEvent(eventType core.EventType, repoID uuid.UUID, payload any) error
 }
 
 // Subscriber is the interface for subscribing to messages from the event bus.
@@ -101,6 +110,14 @@ type Module interface {
 	MsgHandlers() []MsgHandler
 }
 
+// Runner is a long-lived background loop started by the application after module
+// wiring — for example the job runner, schedule runner, rules engine, and
+// realtime hub. It runs until the supplied context is cancelled. Standardising
+// on this interface lets main.go start every background loop uniformly.
+type Runner interface {
+	Run(ctx context.Context)
+}
+
 // moduleMount represents a module and its mount path.
 type moduleMount struct {
 	module Module
@@ -137,6 +154,13 @@ func New(config Config) *App {
 // This must be called before Start() if any module defines MsgHandlers.
 func (a *App) SetSubscriber(sub Subscriber) {
 	a.subscriber = sub
+}
+
+// Logger returns the application's logger. main.go threads this into modules
+// (via SetLogger) and runners so the entire application logs through a single
+// configured handler rather than each component building its own.
+func (a *App) Logger() *slog.Logger {
+	return a.logger
 }
 
 // normalizePath normalises a mount path for consistent handling.

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/upspeak/upspeak/archive"
 	"github.com/upspeak/upspeak/core"
 )
@@ -25,6 +26,20 @@ type publishedMsg struct {
 func (p *mockPublisher) Publish(subject string, data []byte) error {
 	p.published = append(p.published, publishedMsg{Subject: subject, Data: data})
 	return nil
+}
+
+// PublishEvent builds a core.Event envelope and records it via Publish so tests
+// observe the same subject/data the nats publisher would emit.
+func (p *mockPublisher) PublishEvent(eventType core.EventType, repoID uuid.UUID, payload any) error {
+	evt, err := core.NewEvent(eventType, repoID, payload)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		return err
+	}
+	return p.Publish(evt.Subject(), data)
 }
 
 // setupTestModule creates a rules Module wired to a temporary archive.
