@@ -37,7 +37,14 @@ func (m *Module) handleWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	go m.writeLoop(ctx, c, conn)
+	// Cancel on write-loop exit (ping failure or write error) so the read loop,
+	// blocked in c.Read, unwinds and the deferred cleanup runs. Without this a
+	// half-open connection would linger — holding a hub and identity slot — until
+	// the OS TCP timeout, since only the read loop returning triggers teardown.
+	go func() {
+		m.writeLoop(ctx, c, conn)
+		cancel()
+	}()
 	m.readLoop(ctx, c, conn)
 }
 
@@ -72,6 +79,7 @@ func (m *Module) writeLoop(ctx context.Context, c *websocket.Conn, conn *connect
 	ping := time.NewTicker(pingInterval)
 	defer ping.Stop()
 
+	pingFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -80,20 +88,38 @@ func (m *Module) writeLoop(ctx context.Context, c *websocket.Conn, conn *connect
 			if err := c.Write(ctx, websocket.MessageText, frame); err != nil {
 				return
 			}
-			if conn.takeDropped() {
-				m.writeJSON(ctx, c, noticeMessage{
-					Type:    "messages_dropped",
-					Message: "outbound buffer overflowed; some events were dropped",
-				})
-			}
+			m.flushDropped(ctx, c, conn)
 		case <-ping.C:
+			// A pong can be delayed by a transient GC pause or network jitter, so
+			// tolerate up to maxPingFailures consecutive misses before tearing the
+			// connection down (spec 14-api-realtime.md).
 			pctx, pcancel := context.WithTimeout(ctx, pingTimeout)
 			err := c.Ping(pctx)
 			pcancel()
 			if err != nil {
-				return
+				pingFailures++
+				if pingFailures >= maxPingFailures {
+					return
+				}
+			} else {
+				pingFailures = 0
 			}
+			// A burst that overflowed the buffer may be followed by silence, so
+			// flush any pending drop notice here too, not only after a frame.
+			m.flushDropped(ctx, c, conn)
 		}
+	}
+}
+
+// flushDropped sends a single messages_dropped notice when frames were dropped
+// since the last check. It is called after each delivered frame and on each ping
+// tick so an overflow is reported even when no further frame follows to carry it.
+func (m *Module) flushDropped(ctx context.Context, c *websocket.Conn, conn *connection) {
+	if conn.takeDropped() {
+		m.writeJSON(ctx, c, noticeMessage{
+			Type:    "messages_dropped",
+			Message: "outbound buffer overflowed; some events were dropped",
+		})
 	}
 }
 

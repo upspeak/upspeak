@@ -63,25 +63,26 @@ func (c *connection) snapshotSubs() []*subscription {
 	return out
 }
 
-// enqueue queues a frame for delivery. When the buffer is full it drops the
+// enqueue queues a frame for delivery. When the buffer is full it evicts the
 // oldest queued frame to make room for the newest and records that a drop
-// occurred, so a single messages_dropped notice can be sent.
+// occurred, so a single messages_dropped notice can be sent. The hub dispatch
+// loop is the only producer, so once a slot frees up the retry send succeeds;
+// the loop runs at most twice. If the consumer drained the buffer first, the
+// eviction is skipped so a frame that did not need dropping is kept.
 func (c *connection) enqueue(frame []byte) {
-	select {
-	case c.out <- frame:
-		return
-	default:
+	for {
+		select {
+		case c.out <- frame:
+			return
+		default:
+		}
+		// Buffer full: evict the oldest frame, flag the drop, and retry the send.
+		select {
+		case <-c.out:
+			c.dropped.Store(true)
+		default:
+		}
 	}
-	// Buffer full: drop one old frame, then enqueue the new one.
-	select {
-	case <-c.out:
-	default:
-	}
-	select {
-	case c.out <- frame:
-	default:
-	}
-	c.dropped.Store(true)
 }
 
 // takeDropped reports whether frames were dropped since the last call, clearing

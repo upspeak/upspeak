@@ -19,6 +19,7 @@ const (
 	ingestBufferSize    = 1024             // hub ingest backlog
 	pingInterval        = 30 * time.Second // server keepalive interval
 	pingTimeout         = 10 * time.Second // grace for a pong before the conn is closed
+	maxPingFailures     = 3                // consecutive ping misses before the conn is dropped
 )
 
 // clientMessage is a control message sent by a client over the socket.
@@ -39,6 +40,14 @@ type subFilter struct {
 type outboundEvent struct {
 	Channel string            `json:"channel"`
 	Event   outboundEventBody `json:"event"`
+}
+
+// outboundFrame is the wire-equivalent of outboundEvent with a pre-encoded event
+// body. The hub marshals the body once per event and reuses it across every
+// recipient, so only the channel field is re-encoded per subscription.
+type outboundFrame struct {
+	Channel string          `json:"channel"`
+	Event   json.RawMessage `json:"event"`
 }
 
 // outboundEventBody mirrors the spec's event shape (id/type/data/timestamp).
