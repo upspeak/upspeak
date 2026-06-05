@@ -115,6 +115,19 @@ const (
 	ActionWebhook  ActionType = "webhook"
 )
 
+// validActionTypes is the canonical set of recognised rule action types.
+var validActionTypes = map[ActionType]bool{
+	ActionEnrich: true, ActionRelate: true, ActionAnnotate: true,
+	ActionCollect: true, ActionPublish: true, ActionWebhook: true,
+}
+
+// Valid reports whether a is a recognised rule action type. Validators call this
+// instead of re-enumerating the set, so the canonical vocabulary lives only in
+// core.
+func (a ActionType) Valid() bool {
+	return validActionTypes[a]
+}
+
 // FilterMode controls how multiple conditions in a filter are combined.
 type FilterMode string
 
@@ -145,6 +158,25 @@ const (
 	OpNotExists   ConditionOp = "not_exists"
 	OpMatches     ConditionOp = "matches"
 )
+
+// validConditionOps is the canonical set of recognised condition operators.
+var validConditionOps = map[ConditionOp]bool{
+	OpEq: true, OpNeq: true,
+	OpContains: true, OpNotContains: true,
+	OpStartsWith: true, OpEndsWith: true,
+	OpIn: true, OpNotIn: true,
+	OpGt: true, OpLt: true,
+	OpGte: true, OpLte: true,
+	OpExists: true, OpNotExists: true,
+	OpMatches: true,
+}
+
+// Valid reports whether op is a recognised condition operator. Validators call
+// this instead of re-enumerating the operator set, so the canonical vocabulary
+// lives only in core.
+func (op ConditionOp) Valid() bool {
+	return validConditionOps[op]
+}
 
 // ResourceStatus tracks the operational state of a source or sink.
 type ResourceStatus string

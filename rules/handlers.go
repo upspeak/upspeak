@@ -306,16 +306,6 @@ func (m *Module) setStatusHandler(status core.ResourceStatus, event core.EventTy
 	}
 }
 
-// validActionTypes is the set of action types a rule may declare.
-var validActionTypes = map[core.ActionType]bool{
-	core.ActionEnrich:   true,
-	core.ActionRelate:   true,
-	core.ActionAnnotate: true,
-	core.ActionCollect:  true,
-	core.ActionPublish:  true,
-	core.ActionWebhook:  true,
-}
-
 // isUserSettableStatus reports whether a status may be set directly by a client.
 // Operational states (error, rate_limited) are reserved for the engine.
 func isUserSettableStatus(s string) bool {
@@ -337,7 +327,7 @@ func validateRule(name string, trigger core.RuleTrigger, actions []core.RuleActi
 		return fmt.Errorf("too many actions: maximum is %d", maxActions)
 	}
 	for i, action := range actions {
-		if !validActionTypes[action.Type] {
+		if !action.Type.Valid() {
 			return fmt.Errorf("action %d: invalid action type '%s'", i, action.Type)
 		}
 		if err := validateActionParams(action); err != nil {

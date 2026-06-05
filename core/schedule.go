@@ -33,6 +33,23 @@ type ScheduleAction struct {
 	Params   map[string]any `json:"params,omitempty"`    // extra parameters (e.g. url, method for webhook)
 }
 
+// ScheduleActionJobType maps a schedule action type to the job type it triggers,
+// reporting false when the action type cannot be scheduled. The schedulable
+// action vocabulary (collect, publish, webhook) and its mapping to JobType live
+// here so schedulers do not re-enumerate them.
+func ScheduleActionJobType(actionType string) (JobType, bool) {
+	switch actionType {
+	case string(JobCollect):
+		return JobCollect, true
+	case string(JobPublish):
+		return JobPublish, true
+	case string(JobWebhook):
+		return JobWebhook, true
+	default:
+		return "", false
+	}
+}
+
 // CollectionRecord captures the result of a single collection attempt on a source.
 type CollectionRecord struct {
 	ID           uuid.UUID      `json:"id"`

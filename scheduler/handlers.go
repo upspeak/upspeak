@@ -15,13 +15,6 @@ import (
 // defaultOwnerID is a placeholder until authentication is implemented.
 var defaultOwnerID = uuid.MustParse("00000000-0000-7000-8000-000000000001")
 
-// validActionTypes lists the allowed values for ScheduleAction.Type.
-var validActionTypes = map[string]bool{
-	"collect": true,
-	"publish": true,
-	"webhook": true,
-}
-
 // createScheduleRequest is the JSON body for POST /schedules.
 type createScheduleRequest struct {
 	Name   string              `json:"name"`
@@ -268,8 +261,8 @@ func (m *Module) triggerScheduleHandler() http.HandlerFunc {
 			return
 		}
 
-		jobType := actionTypeToJobType(schedule.Action.Type)
-		if jobType == "" {
+		jobType, ok := core.ScheduleActionJobType(schedule.Action.Type)
+		if !ok {
 			api.WriteError(w, http.StatusBadRequest, "invalid_action_type", "Cannot determine job type from schedule action")
 			return
 		}
@@ -412,7 +405,7 @@ func (m *Module) publishEvent(eventType core.EventType, payload any) {
 
 // validateAction checks that a ScheduleAction has valid and complete fields.
 func validateAction(action core.ScheduleAction) error {
-	if !validActionTypes[action.Type] {
+	if _, ok := core.ScheduleActionJobType(action.Type); !ok {
 		return errors.New("action type must be \"collect\", \"publish\", or \"webhook\"")
 	}
 
@@ -441,20 +434,6 @@ func validateAction(action core.ScheduleAction) error {
 	}
 
 	return nil
-}
-
-// actionTypeToJobType maps a schedule action type to a job type.
-func actionTypeToJobType(actionType string) core.JobType {
-	switch actionType {
-	case "collect":
-		return core.JobCollect
-	case "publish":
-		return core.JobPublish
-	case "webhook":
-		return core.JobWebhook
-	default:
-		return ""
-	}
 }
 
 // buildScheduleParams constructs the JSON params for a job created by a schedule.

@@ -3,7 +3,6 @@ package repo
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -256,7 +255,7 @@ func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Validate conditions on update (same as create).
-	if err := validateFilterConditions(req.Conditions); err != nil {
+	if err := core.ValidateConditions(req.Conditions); err != nil {
 		api.WriteError(w, http.StatusBadRequest, "invalid_conditions", err.Error())
 		return
 	}
@@ -281,36 +280,6 @@ func (m *Module) updateFilterFromRequest(w http.ResponseWriter, r *http.Request,
 
 	api.SetETag(w, existing.Version)
 	api.WriteJSON(w, http.StatusOK, existing)
-}
-
-// validateFilterConditions checks that conditions have valid fields and operators,
-// and enforces a maximum of 50 conditions per filter.
-func validateFilterConditions(conditions []core.Condition) error {
-	const maxConditions = 50
-	if len(conditions) > maxConditions {
-		return fmt.Errorf("too many conditions: maximum is %d", maxConditions)
-	}
-
-	validOps := map[core.ConditionOp]bool{
-		core.OpEq: true, core.OpNeq: true,
-		core.OpContains: true, core.OpNotContains: true,
-		core.OpStartsWith: true, core.OpEndsWith: true,
-		core.OpIn: true, core.OpNotIn: true,
-		core.OpGt: true, core.OpLt: true,
-		core.OpGte: true, core.OpLte: true,
-		core.OpExists: true, core.OpNotExists: true,
-		core.OpMatches: true,
-	}
-
-	for i, c := range conditions {
-		if c.Field == "" {
-			return fmt.Errorf("condition %d: field is required", i)
-		}
-		if !validOps[c.Op] {
-			return fmt.Errorf("condition %d: invalid operator '%s'", i, c.Op)
-		}
-	}
-	return nil
 }
 
 // testFilterViaFlatURL handles POST /repos/{repo_ref}/FILTER-3/test via entity sub dispatch.

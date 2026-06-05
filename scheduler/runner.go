@@ -180,8 +180,8 @@ func (r *Runner) processTrigger(msg *app.Msg) {
 		return
 	}
 
-	jobType := actionTypeToJobType(schedule.Action.Type)
-	if jobType == "" {
+	jobType, ok := core.ScheduleActionJobType(schedule.Action.Type)
+	if !ok {
 		r.logger.Error("Unknown action type for schedule", "schedule_id", schedule.ID, "action_type", schedule.Action.Type)
 		_ = msg.Term()
 		return
