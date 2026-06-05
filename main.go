@@ -11,6 +11,8 @@ import (
 	"github.com/upspeak/upspeak/archive"
 	"github.com/upspeak/upspeak/connector"
 	"github.com/upspeak/upspeak/filter"
+	"github.com/upspeak/upspeak/ingest"
+	"github.com/upspeak/upspeak/integrations/webhook"
 	"github.com/upspeak/upspeak/jobs"
 	usnats "github.com/upspeak/upspeak/nats"
 	"github.com/upspeak/upspeak/realtime"
@@ -198,12 +200,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Build the adapter registry from the compiled-in integrations. main.go is
+	// the only place that knows the concrete adapters; jobs/connector consume
+	// the app.AdapterRegistry interface, so no import cycle forms.
+	adapterRegistry := ingest.NewRegistry()
+	adapterRegistry.Register(webhook.New())
+
 	// Start every background loop uniformly through the app.Runner contract.
 	// Events buffered before the realtime hub starts are drained once it runs;
 	// all loops stop when runnerCtx is cancelled.
 	runnerCtx, cancelRunner := context.WithCancel(context.Background())
 	runners := []app.Runner{
-		jobs.NewRunner(a, jobConsumer),
+		jobs.NewRunner(a, jobConsumer, bus.Publisher(), adapterRegistry),
 		scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer),
 		rules.NewEngine(a, bus.Publisher(), rulesConsumer),
 		realtimeModule,
