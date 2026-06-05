@@ -1,6 +1,6 @@
 # Upspeak — API Completion Status & Next Steps
 
-**Last updated:** 2026-06-05
+**Last updated:** 2026-06-06
 
 This is the single source of planning truth for finishing Upspeak's initial API. It
 replaces the earlier `docs/specs/` and `docs/superpowers/` planning artefacts (which had
@@ -55,33 +55,62 @@ The plan scopes a full single-user, multi-device sync system. Nothing exists yet
 - **Emit** `EventSyncCompleted` and `EventConflictDetected` (declared in
   `core/shared_types.go`, currently never published).
 
-### 2. Connector backends
+### 2. Ingestion track — connector adapterisation
+
+This cross-cutting track replaces the original "one backend per job type" design with a
+first-class **adapter + registry + pipeline** model (ADR-0013, ADR-0014, ADR-0015).
+Each integration lives in `integrations/<name>/`, imports only `core`, and is wired by
+`main.go` via DI — breaking the `connector ↔ jobs` import cycle.
+
+| Sub-project | Status | Scope |
+|-------------|--------|-------|
+| A1 — Foundation | **Shipped** | `Connection` entity + store, `core.Adapter` contract, ingest types (`Item`, `Cursor`, `IngestCursor`), `GetNodeBySourceExternalID`, node provenance, `secrets.SecretCipher` port + AES-256-GCM implementation |
+| A2 — Registry + pipeline + webhook adapter | **Shipped** | `app.AdapterRegistry` lookup interface; `ingest.Registry` + Item-path `Pipeline` (map → filter → persist → dedup → events); `integrations/webhook` connection-less `Collector`; `jobs/runner.go` `executeWebhook` dispatches via registry+pipeline; runner gains DI of `app.Publisher` + `app.AdapterRegistry`, eliminating the `jobs ↔ connector` import cycle; webhook URLs redacted in logs and persisted error strings |
+| A2b — repo→repo adapter | **Pending** | Net-new internal data movement; the adapter reads from a source repository's archive (a documented internal exception — adapters otherwise never touch the archive); must interact with `connector/cycle.go` to prevent self-loops; split out of A2 deliberately |
+| A3 — Cipher + connection enforcement | **Pending** | Wire `secrets.NewCipherFromEnv()` / `LocalArchive.SetSecretCipher` at runtime; enforce connector↔connection type match on source/sink create/update; return 409 when deleting an in-use connection; credential update is load-modify-save |
+| B — Full collect/publish wiring | **Pending** | Wire `executeCollect`/`executePublish` through registry+pipeline (cursors via `GetIngestCursor`/`SaveIngestCursor`, filter-on-normalised, dedup); emit `CollectionCompleted`/`PublishCompleted`; extend pipeline beyond Items: Threads (need thread provenance — not in the A1 schema), Annotations, Tombstones, reply Edges, author→User resolution (needs a user store) |
+
+**Watch-outs for Sub-project A3:** All items in the A3 row above are carry-forwards
+from A1's review — none of A1 or A2 wired them. Specifically: `LocalArchive.SetSecretCipher`
+exists but is never called at startup; `isSupportedConnector` does not yet validate that
+the source's `connection_id` references a connection whose type matches the connector type.
+
+**Watch-outs for Sub-project B:** `executeCollect` and `executePublish` in
+`jobs/runner.go` still record success without doing real work. They need the full
+registry+pipeline dispatch path that `executeWebhook` now uses, plus cursor persistence
+and `CollectionCompleted`/`PublishCompleted` event emission. The pipeline currently only
+handles `Item`; Threads will require provenance tracking (not yet in the A1 archive
+schema), and author→User resolution requires a user store.
+
+### 3. Connector backends
 
 Phase 4 built the connector framework plus the `webhook` and `repo` connector types.
 The remaining declared `ConnectorType`s are deferred to "incrementally later" by the
-plan and still need execution backends: **rss, discourse, matrix, fediverse, email,
+plan and still need adapter implementations: **rss, discourse, matrix, fediverse, email,
 webpage, upspeak**. Until implemented, `connector/handlers_source.go`
-`isSupportedConnector()` rejects them.
+`isSupportedConnector()` rejects them. The `repo→repo` adapter (Sub-project A2b above)
+is the next planned addition.
 
-### 3. Job execution backends
+### 4. Job execution backends
 
-`jobs/runner.go` wires the full job lifecycle but the executors are placeholders that
-record success without doing real work:
+`jobs/runner.go` wires the full job lifecycle. Since A2, `executeWebhook` dispatches
+via the adapter registry and ingest pipeline. The remaining executors are still
+placeholders that record success without doing real work:
 
-- `executeCollect` — must dispatch to the connector backend for the source's type.
-- `executePublish` — must dispatch to the sink's connector backend.
-- `executeWebhook` — must fetch the URL, parse content, and create nodes.
+- `executeCollect` — must dispatch to the connector backend for the source's type (Sub-project B).
+- `executePublish` — must dispatch to the sink's connector backend (Sub-project B).
 - `executeSync` — returns `{"status":"not_implemented"}`; awaits Phase 6b.
 
-These unblock once the connector backends (item 2) and sync (item 1) exist.
+These unblock once the connector adapters (item 3) and sync (item 1) exist.
 
-### 4. Operational events
+### 5. Operational events
 
 Publish `EventCollectionCompleted` and `EventPublishCompleted` from job completion.
 They are declared in `core` but emitted nowhere, so rules and realtime clients cannot
-react to collection/publish outcomes yet.
+react to collection/publish outcomes yet. These are wired as part of Sub-project B
+above (see §4 watch-outs).
 
-### 5. Endpoint gaps left stubbed by shipped phases
+### 6. Endpoint gaps left stubbed by shipped phases
 
 - **Async repo delete** — `repo/handlers_repo.go` still deletes synchronously and
   returns `204`. The design calls for creating a delete job and returning `202 Accepted`
@@ -89,7 +118,7 @@ react to collection/publish outcomes yet.
 - **Thread publish** — `POST /repos/{repo_ref}/{thread_ref}/publish`
   (`repo/handlers_entity.go`) returns `501 Not Implemented`.
 
-### 6. Realtime stub-channel backings
+### 7. Realtime stub-channel backings
 
 The realtime module accepts all six spec channels; three never emit because their
 matcher falls through to `false` in `realtime/match.go`:
@@ -99,7 +128,7 @@ matcher falls through to `false` in `realtime/match.go`:
 - `jobs.{job}` — needs a new `JobUpdated` event published on job state changes.
 - `sync` — needs the Phase 6b events (item 1).
 
-### 7. Search source filtering
+### 8. Search source filtering
 
 `archive/search_store.go` disables the browse `SourceID` filter because nodes have no
 source attribution. Requires a node→source tracking mechanism (e.g. a `Node.source_id`
@@ -115,16 +144,15 @@ source of truth — line numbers drift, so search by symbol if they don't match.
 | Location | What is stubbed | Replace with | Depends on |
 |----------|-----------------|--------------|------------|
 | `realtime/auth.go` | `allowAllAuthenticator` permits every WS upgrade (identity `"local"`) | Real token/identity verification | Auth (deferred, Phase 7+) |
-| `realtime/match.go` (`matchChannel` default) | `channelRuleActions` / `channelJob` / `channelSync` never match | Wire to backing events | §6 / `JobUpdated` / Phase 6b |
-| `jobs/runner.go` `executeCollect` | Records success without fetching | Dispatch to connector backend | §2 |
-| `jobs/runner.go` `executePublish` | Records success without publishing | Dispatch to sink backend | §2 |
-| `jobs/runner.go` `executeWebhook` | Records completion without fetching/parsing | Fetch URL → parse → create nodes | — |
+| `realtime/match.go` (`matchChannel` default) | `channelRuleActions` / `channelJob` / `channelSync` never match | Wire to backing events | §7 / `JobUpdated` / Phase 6b |
+| `jobs/runner.go` `executeCollect` | Records success without fetching | Dispatch via registry+pipeline; cursors, filter-on-normalised, dedup | Sub-project B |
+| `jobs/runner.go` `executePublish` | Records success without publishing | Dispatch via registry+pipeline to sink adapter | Sub-project B |
 | `jobs/runner.go` `executeSync` | Returns `not_implemented` | Real sync run | Phase 6b |
-| `connector/handlers_source.go` `isSupportedConnector` | Only `webhook` + `repo` accepted | Allow each type as its backend lands | §2 |
+| `connector/handlers_source.go` `isSupportedConnector` | Only `webhook` + `repo` accepted | Allow each type as its adapter lands | §3 |
 | `repo/handlers_repo.go` delete handler | Synchronous delete, `204` | Async delete job, `202` | — |
-| `repo/handlers_entity.go` thread publish | `501 Not Implemented` | Thread publication logic | §2 (sinks) |
-| `archive/search_store.go` browse | `SourceID` filter disabled | Node→source tracking | §7 |
-| `core/shared_types.go` | `EventCollectionCompleted` / `EventPublishCompleted` declared, never published | Emit on job completion | §4 |
+| `repo/handlers_entity.go` thread publish | `501 Not Implemented` | Thread publication logic | §3 (sink adapters) |
+| `archive/search_store.go` browse | `SourceID` filter disabled | Node→source tracking | §8 |
+| `core/shared_types.go` | `EventCollectionCompleted` / `EventPublishCompleted` declared, never published | Emit on job completion | Sub-project B |
 | `scheduler/handlers.go` `defaultOwnerID` | Fixed owner UUID until auth exists | Per-user ownership | Auth (deferred) |
 | `archive/local.go` | FTS5 graceful-degrade without `sqlite_fts5` build tag | Ensure prod builds set the tag | build config |
 
