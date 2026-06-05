@@ -45,10 +45,12 @@ func (a *LocalArchive) saveThread(thread *core.Thread) error {
 
 		// Insert thread row.
 		_, err = a.db.Exec(`
-			INSERT INTO threads (id, short_id, repo_id, node_id, metadata, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO threads (id, short_id, repo_id, node_id, metadata, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, thread.ID.String(), thread.ShortID, thread.RepoID.String(),
-			thread.Node.ID.String(), string(metadataJSON), thread.CreatedBy.String(),
+			thread.Node.ID.String(), string(metadataJSON),
+			uuidPtrString(thread.SourceID), strPtrAny(thread.ExternalID),
+			thread.CreatedBy.String(),
 			thread.Version, thread.CreatedAt.Format(time.RFC3339), thread.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
 			return fmt.Errorf("failed to insert thread: %w", err)
@@ -103,13 +105,13 @@ func (a *LocalArchive) getThread(threadID uuid.UUID) (*core.Thread, error) {
 	// Get thread row.
 	var thread core.Thread
 	var idStr, repoIDStr, nodeIDStr, createdByStr, createdAt, updatedAt string
-	var metadataStr sql.NullString
+	var metadataStr, sourceIDStr, externalIDStr sql.NullString
 
 	err := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, node_id, metadata, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, node_id, metadata, source_id, external_id, created_by, version, created_at, updated_at
 		FROM threads WHERE id = ?
 	`, threadID.String()).Scan(&idStr, &thread.ShortID, &repoIDStr, &nodeIDStr,
-		&metadataStr, &createdByStr, &thread.Version, &createdAt, &updatedAt)
+		&metadataStr, &sourceIDStr, &externalIDStr, &createdByStr, &thread.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("thread", threadID.String())
 	}
@@ -134,6 +136,18 @@ func (a *LocalArchive) getThread(threadID uuid.UUID) (*core.Thread, error) {
 		if err := json.Unmarshal([]byte(metadataStr.String), &thread.Metadata); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal thread metadata: %w", err)
 		}
+	}
+
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse thread source_id: %w", err)
+		}
+		thread.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		thread.ExternalID = &ext
 	}
 
 	thread.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
@@ -253,7 +267,7 @@ func (a *LocalArchive) listThreads(repoID uuid.UUID, opts core.ListOptions) ([]c
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, node_id, metadata, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, node_id, metadata, source_id, external_id, created_by, version, created_at, updated_at
 		 FROM threads WHERE repo_id = ? ORDER BY %s %s LIMIT ? OFFSET ?`,
 		sortBy, order,
 	)
@@ -378,7 +392,7 @@ func (a *LocalArchive) removeNodeFromThread(threadID, nodeID uuid.UUID) error {
 // getThreadEdges retrieves all edges linked to a thread via the thread_edges table.
 func (a *LocalArchive) getThreadEdges(threadID uuid.UUID) ([]core.Edge, error) {
 	rows, err := a.db.Query(`
-		SELECT e.id, e.short_id, e.repo_id, e.type, e.source, e.target, e.label, e.weight, e.created_by, e.version, e.created_at, e.updated_at
+		SELECT e.id, e.short_id, e.repo_id, e.type, e.source, e.target, e.label, e.weight, e.source_id, e.external_id, e.created_by, e.version, e.created_at, e.updated_at
 		FROM edges e
 		JOIN thread_edges te ON te.edge_id = e.id
 		WHERE te.thread_id = ?
@@ -405,10 +419,10 @@ func (a *LocalArchive) getThreadEdges(threadID uuid.UUID) ([]core.Edge, error) {
 func scanThreadFromRow(rows *sql.Rows) (*core.Thread, error) {
 	var thread core.Thread
 	var idStr, repoIDStr, nodeIDStr, createdByStr, createdAt, updatedAt string
-	var metadataStr sql.NullString
+	var metadataStr, sourceIDStr, externalIDStr sql.NullString
 
 	err := rows.Scan(&idStr, &thread.ShortID, &repoIDStr, &nodeIDStr,
-		&metadataStr, &createdByStr, &thread.Version, &createdAt, &updatedAt)
+		&metadataStr, &sourceIDStr, &externalIDStr, &createdByStr, &thread.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan thread row: %w", err)
 	}
@@ -425,6 +439,18 @@ func scanThreadFromRow(rows *sql.Rows) (*core.Thread, error) {
 
 	if metadataStr.Valid && metadataStr.String != "" {
 		_ = json.Unmarshal([]byte(metadataStr.String), &thread.Metadata)
+	}
+
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse thread source_id: %w", err)
+		}
+		thread.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		thread.ExternalID = &ext
 	}
 
 	return &thread, nil

@@ -31,10 +31,11 @@ func (a *LocalArchive) saveEdge(edge *core.Edge) error {
 		edge.UpdatedAt = now
 
 		_, err = a.db.Exec(`
-			INSERT INTO edges (id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO edges (id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, edge.ID.String(), edge.ShortID, edge.RepoID.String(), edge.Type,
 			edge.Source.String(), edge.Target.String(), edge.Label, edge.Weight,
+			uuidPtrString(edge.SourceID), strPtrAny(edge.ExternalID),
 			edge.CreatedBy.String(), edge.Version,
 			edge.CreatedAt.Format(time.RFC3339), edge.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
@@ -102,10 +103,11 @@ func (a *LocalArchive) saveBatchEdges(edges []*core.Edge) error {
 		edge.UpdatedAt = now
 
 		_, err = tx.Exec(`
-			INSERT INTO edges (id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO edges (id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, edge.ID.String(), edge.ShortID, edge.RepoID.String(), edge.Type,
 			edge.Source.String(), edge.Target.String(), edge.Label, edge.Weight,
+			uuidPtrString(edge.SourceID), strPtrAny(edge.ExternalID),
 			edge.CreatedBy.String(), edge.Version,
 			edge.CreatedAt.Format(time.RFC3339), edge.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
@@ -119,7 +121,7 @@ func (a *LocalArchive) saveBatchEdges(edges []*core.Edge) error {
 // getEdge retrieves an edge by UUID.
 func (a *LocalArchive) getEdge(edgeID uuid.UUID) (*core.Edge, error) {
 	row := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at
 		FROM edges WHERE id = ?
 	`, edgeID.String())
 	return scanEdgeFromSingleRow(row)
@@ -182,7 +184,7 @@ func (a *LocalArchive) listEdges(repoID uuid.UUID, opts core.EdgeListOptions) ([
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at
 		 FROM edges %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -210,9 +212,11 @@ func (a *LocalArchive) listEdges(repoID uuid.UUID, opts core.EdgeListOptions) ([
 func scanEdgeFromSingleRow(row *sql.Row) (*core.Edge, error) {
 	var edge core.Edge
 	var idStr, repoIDStr, sourceStr, targetStr, createdByStr, createdAt, updatedAt string
+	var sourceIDStr, externalIDStr sql.NullString
 
 	err := row.Scan(&idStr, &edge.ShortID, &repoIDStr, &edge.Type,
 		&sourceStr, &targetStr, &edge.Label, &edge.Weight,
+		&sourceIDStr, &externalIDStr,
 		&createdByStr, &edge.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("edge", "")
@@ -221,26 +225,28 @@ func scanEdgeFromSingleRow(row *sql.Row) (*core.Edge, error) {
 		return nil, fmt.Errorf("failed to scan edge: %w", err)
 	}
 
-	return parseEdgeFields(&edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr, createdAt, updatedAt)
+	return parseEdgeFields(&edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr, sourceIDStr, externalIDStr, createdAt, updatedAt)
 }
 
 // scanEdgeFromRow scans an edge from a *sql.Rows iterator.
 func scanEdgeFromRow(rows *sql.Rows) (*core.Edge, error) {
 	var edge core.Edge
 	var idStr, repoIDStr, sourceStr, targetStr, createdByStr, createdAt, updatedAt string
+	var sourceIDStr, externalIDStr sql.NullString
 
 	err := rows.Scan(&idStr, &edge.ShortID, &repoIDStr, &edge.Type,
 		&sourceStr, &targetStr, &edge.Label, &edge.Weight,
+		&sourceIDStr, &externalIDStr,
 		&createdByStr, &edge.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan edge row: %w", err)
 	}
 
-	return parseEdgeFields(&edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr, createdAt, updatedAt)
+	return parseEdgeFields(&edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr, sourceIDStr, externalIDStr, createdAt, updatedAt)
 }
 
 // parseEdgeFields populates an Edge's parsed fields from raw scanned strings.
-func parseEdgeFields(edge *core.Edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr, createdAt, updatedAt string) (*core.Edge, error) {
+func parseEdgeFields(edge *core.Edge, idStr, repoIDStr, sourceStr, targetStr, createdByStr string, sourceIDStr, externalIDStr sql.NullString, createdAt, updatedAt string) (*core.Edge, error) {
 	var err error
 
 	edge.ID, err = uuid.Parse(idStr)
@@ -262,6 +268,18 @@ func parseEdgeFields(edge *core.Edge, idStr, repoIDStr, sourceStr, targetStr, cr
 	edge.CreatedBy, err = uuid.Parse(createdByStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse edge created_by: %w", err)
+	}
+
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse edge source_id: %w", err)
+		}
+		edge.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		edge.ExternalID = &ext
 	}
 
 	edge.CreatedAt, err = time.Parse(time.RFC3339, createdAt)

@@ -306,7 +306,7 @@ func (a *LocalArchive) getNodeEdges(nodeID uuid.UUID, opts core.EdgeQueryOptions
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at
 		 FROM edges %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)
@@ -366,7 +366,7 @@ func (a *LocalArchive) getNodeAnnotations(nodeID uuid.UUID, opts core.Annotation
 	}
 
 	query := fmt.Sprintf(
-		`SELECT a.id, a.short_id, a.repo_id, a.node_id, a.edge_id, a.motivation, a.created_by, a.version, a.created_at, a.updated_at
+		`SELECT a.id, a.short_id, a.repo_id, a.node_id, a.edge_id, a.motivation, a.source_id, a.external_id, a.created_by, a.version, a.created_at, a.updated_at
 		 FROM annotations a JOIN edges e ON a.edge_id = e.id %s ORDER BY %s %s LIMIT ? OFFSET ?`,
 		where, sortBy, order,
 	)

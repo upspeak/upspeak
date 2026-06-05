@@ -39,37 +39,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_source_external ON nodes(source_id, 
 
 -- Edges.
 CREATE TABLE IF NOT EXISTS edges (
-	id         TEXT PRIMARY KEY,
-	short_id   TEXT NOT NULL,
-	repo_id    TEXT NOT NULL,
-	type       TEXT NOT NULL,
-	source     TEXT NOT NULL,
-	target     TEXT NOT NULL,
-	label      TEXT NOT NULL DEFAULT '',
-	weight     REAL NOT NULL DEFAULT 1.0,
-	created_by TEXT NOT NULL,
-	version    INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
+	id          TEXT PRIMARY KEY,
+	short_id    TEXT NOT NULL,
+	repo_id     TEXT NOT NULL,
+	type        TEXT NOT NULL,
+	source      TEXT NOT NULL,
+	target      TEXT NOT NULL,
+	label       TEXT NOT NULL DEFAULT '',
+	weight      REAL NOT NULL DEFAULT 1.0,
+	source_id   TEXT,
+	external_id TEXT,
+	created_by  TEXT NOT NULL,
+	version     INTEGER NOT NULL DEFAULT 1,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_edges_repo_id ON edges(repo_id);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_source_external ON edges(source_id, external_id) WHERE source_id IS NOT NULL;
 
 -- Threads.
 CREATE TABLE IF NOT EXISTS threads (
-	id         TEXT PRIMARY KEY,
-	short_id   TEXT NOT NULL,
-	repo_id    TEXT NOT NULL,
-	node_id    TEXT NOT NULL,
-	metadata   TEXT,
-	created_by TEXT NOT NULL,
-	version    INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
+	id          TEXT PRIMARY KEY,
+	short_id    TEXT NOT NULL,
+	repo_id     TEXT NOT NULL,
+	node_id     TEXT NOT NULL,
+	metadata    TEXT,
+	source_id   TEXT,
+	external_id TEXT,
+	created_by  TEXT NOT NULL,
+	version     INTEGER NOT NULL DEFAULT 1,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL,
 	FOREIGN KEY (node_id) REFERENCES nodes(id)
 );
 CREATE INDEX IF NOT EXISTS idx_threads_repo_id ON threads(repo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_source_external ON threads(source_id, external_id) WHERE source_id IS NOT NULL;
 
 -- Thread-edge links.
 CREATE TABLE IF NOT EXISTS thread_edges (
@@ -82,20 +88,23 @@ CREATE TABLE IF NOT EXISTS thread_edges (
 
 -- Annotations.
 CREATE TABLE IF NOT EXISTS annotations (
-	id         TEXT PRIMARY KEY,
-	short_id   TEXT NOT NULL,
-	repo_id    TEXT NOT NULL,
-	node_id    TEXT NOT NULL,
-	edge_id    TEXT NOT NULL,
-	motivation TEXT NOT NULL,
-	created_by TEXT NOT NULL,
-	version    INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
+	id          TEXT PRIMARY KEY,
+	short_id    TEXT NOT NULL,
+	repo_id     TEXT NOT NULL,
+	node_id     TEXT NOT NULL,
+	edge_id     TEXT NOT NULL,
+	motivation  TEXT NOT NULL,
+	source_id   TEXT,
+	external_id TEXT,
+	created_by  TEXT NOT NULL,
+	version     INTEGER NOT NULL DEFAULT 1,
+	created_at  TEXT NOT NULL,
+	updated_at  TEXT NOT NULL,
 	FOREIGN KEY (node_id) REFERENCES nodes(id),
 	FOREIGN KEY (edge_id) REFERENCES edges(id)
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_repo_id ON annotations(repo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_source_external ON annotations(source_id, external_id) WHERE source_id IS NOT NULL;
 
 -- Filters.
 CREATE TABLE IF NOT EXISTS filters (

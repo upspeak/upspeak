@@ -45,11 +45,12 @@ func (a *LocalArchive) saveAnnotation(annotation *core.Annotation) error {
 
 		// Insert annotation row.
 		_, err = a.db.Exec(`
-			INSERT INTO annotations (id, short_id, repo_id, node_id, edge_id, motivation, created_by, version, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO annotations (id, short_id, repo_id, node_id, edge_id, motivation, source_id, external_id, created_by, version, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, annotation.ID.String(), annotation.ShortID, annotation.RepoID.String(),
 			annotation.Node.ID.String(), annotation.Edge.ID.String(),
-			annotation.Motivation, annotation.CreatedBy.String(),
+			annotation.Motivation, uuidPtrString(annotation.SourceID), strPtrAny(annotation.ExternalID),
+			annotation.CreatedBy.String(),
 			annotation.Version, annotation.CreatedAt.Format(time.RFC3339),
 			annotation.UpdatedAt.Format(time.RFC3339))
 		if err != nil {
@@ -96,12 +97,13 @@ func (a *LocalArchive) saveAnnotation(annotation *core.Annotation) error {
 func (a *LocalArchive) getAnnotation(annotationID uuid.UUID) (*core.Annotation, error) {
 	var annotation core.Annotation
 	var idStr, repoIDStr, nodeIDStr, edgeIDStr, createdByStr, createdAt, updatedAt string
+	var sourceIDStr, externalIDStr sql.NullString
 
 	err := a.db.QueryRow(`
-		SELECT id, short_id, repo_id, node_id, edge_id, motivation, created_by, version, created_at, updated_at
+		SELECT id, short_id, repo_id, node_id, edge_id, motivation, source_id, external_id, created_by, version, created_at, updated_at
 		FROM annotations WHERE id = ?
 	`, annotationID.String()).Scan(&idStr, &annotation.ShortID, &repoIDStr,
-		&nodeIDStr, &edgeIDStr, &annotation.Motivation, &createdByStr,
+		&nodeIDStr, &edgeIDStr, &annotation.Motivation, &sourceIDStr, &externalIDStr, &createdByStr,
 		&annotation.Version, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, core.NewErrorNotFound("annotation", annotationID.String())
@@ -129,6 +131,18 @@ func (a *LocalArchive) getAnnotation(annotationID uuid.UUID) (*core.Annotation, 
 	annotation.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse annotation updated_at: %w", err)
+	}
+
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse annotation source_id: %w", err)
+		}
+		annotation.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		annotation.ExternalID = &ext
 	}
 
 	// Get embedded node.
@@ -219,7 +233,7 @@ func (a *LocalArchive) listAnnotations(repoID uuid.UUID, opts core.ListOptions) 
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, node_id, edge_id, motivation, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, node_id, edge_id, motivation, source_id, external_id, created_by, version, created_at, updated_at
 		 FROM annotations WHERE repo_id = ? ORDER BY %s %s LIMIT ? OFFSET ?`,
 		sortBy, order,
 	)
@@ -247,9 +261,10 @@ func (a *LocalArchive) listAnnotations(repoID uuid.UUID, opts core.ListOptions) 
 func (a *LocalArchive) scanAnnotationRowAndHydrate(rows *sql.Rows) (*core.Annotation, error) {
 	var annotation core.Annotation
 	var idStr, repoIDStr, nodeIDStr, edgeIDStr, createdByStr, createdAt, updatedAt string
+	var sourceIDStr, externalIDStr sql.NullString
 
 	err := rows.Scan(&idStr, &annotation.ShortID, &repoIDStr,
-		&nodeIDStr, &edgeIDStr, &annotation.Motivation, &createdByStr,
+		&nodeIDStr, &edgeIDStr, &annotation.Motivation, &sourceIDStr, &externalIDStr, &createdByStr,
 		&annotation.Version, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan annotation row: %w", err)
@@ -260,6 +275,18 @@ func (a *LocalArchive) scanAnnotationRowAndHydrate(rows *sql.Rows) (*core.Annota
 	annotation.CreatedBy, _ = uuid.Parse(createdByStr)
 	annotation.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	annotation.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+
+	if sourceIDStr.Valid && sourceIDStr.String != "" {
+		sid, err := uuid.Parse(sourceIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("parse annotation source_id: %w", err)
+		}
+		annotation.SourceID = &sid
+	}
+	if externalIDStr.Valid {
+		ext := externalIDStr.String
+		annotation.ExternalID = &ext
+	}
 
 	// Hydrate embedded node.
 	nodeID, err := uuid.Parse(nodeIDStr)

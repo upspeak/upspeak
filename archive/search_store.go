@@ -439,7 +439,7 @@ func (a *LocalArchive) getEdgesBetweenNodes(repoID uuid.UUID, nodeIDs map[uuid.U
 	copy(targetArgs, args)
 
 	query := fmt.Sprintf(
-		`SELECT id, short_id, repo_id, type, source, target, label, weight, created_by, version, created_at, updated_at
+		`SELECT id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at
  FROM edges
  WHERE repo_id = ? AND source IN (%s) AND target IN (%s)`,
 		inClause, inClause,
