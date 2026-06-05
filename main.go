@@ -13,6 +13,7 @@ import (
 	"github.com/upspeak/upspeak/filter"
 	"github.com/upspeak/upspeak/jobs"
 	usnats "github.com/upspeak/upspeak/nats"
+	"github.com/upspeak/upspeak/realtime"
 	"github.com/upspeak/upspeak/repo"
 	"github.com/upspeak/upspeak/rules"
 	"github.com/upspeak/upspeak/scheduler"
@@ -73,6 +74,10 @@ func main() {
 	// Initialise search module.
 	searchModule := &search.Module{}
 
+	// Initialise realtime module. Its events arrive via the app subscriber
+	// (repo.*.events.> core-NATS fan-out), so it needs no dedicated consumer.
+	realtimeModule := realtime.New()
+
 	// Register modules.
 	if err := up.AddModule(archiveModule); err != nil {
 		slog.Error("Error adding archive module", "error", err)
@@ -114,6 +119,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := up.AddModuleOnPath(realtimeModule, "/api/v1"); err != nil {
+		slog.Error("Error adding realtime module", "error", err)
+		os.Exit(1)
+	}
+
 	// Initialise modules (calls Init, registers handlers, but does NOT start HTTP).
 	if err := up.InitModules(); err != nil {
 		slog.Error("Error initialising modules", "error", err)
@@ -129,6 +139,7 @@ func main() {
 	schedulerModule.SetArchive(a)
 	rulesModule.SetArchive(a)
 	searchModule.SetArchive(a)
+	realtimeModule.SetArchive(a)
 
 	// Set up NATS JetStream streams and consumers for job processing.
 	sm := usnats.NewStreamManager(bus)
@@ -193,6 +204,10 @@ func main() {
 	}
 	rulesEngine := rules.NewEngine(a, bus.Publisher(), rulesConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	go rulesEngine.Run(runnerCtx)
+
+	// Start the realtime hub dispatch loop. Events buffered before it starts are
+	// drained once it runs; the loop stops when runnerCtx is cancelled.
+	go realtimeModule.Run(runnerCtx)
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {
