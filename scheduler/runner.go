@@ -27,16 +27,14 @@ type Runner struct {
 	archive  core.Archive
 	pub      app.Publisher
 	consumer app.Consumer
-	logger   *slog.Logger
 }
 
 // NewRunner creates a new schedule runner.
-func NewRunner(archive core.Archive, pub app.Publisher, consumer app.Consumer, logger *slog.Logger) *Runner {
+func NewRunner(archive core.Archive, pub app.Publisher, consumer app.Consumer) *Runner {
 	return &Runner{
 		archive:  archive,
 		pub:      pub,
 		consumer: consumer,
-		logger:   logger,
 	}
 }
 
@@ -44,7 +42,7 @@ func NewRunner(archive core.Archive, pub app.Publisher, consumer app.Consumer, l
 // The tick loop runs in a separate goroutine; the consume loop runs
 // in the calling goroutine.
 func (r *Runner) Run(ctx context.Context) {
-	r.logger.Info("Schedule runner started")
+	slog.Info("Schedule runner started")
 
 	go r.tickLoop(ctx)
 	r.consumeLoop(ctx)
@@ -62,7 +60,7 @@ func (r *Runner) tickLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.logger.Info("Schedule tick loop stopping")
+			slog.Info("Schedule tick loop stopping")
 			return
 		case <-ticker.C:
 			r.checkSchedules()
@@ -75,7 +73,7 @@ func (r *Runner) tickLoop(ctx context.Context) {
 func (r *Runner) checkSchedules() {
 	schedules, err := r.archive.GetEnabledSchedules()
 	if err != nil {
-		r.logger.Error("Failed to get enabled schedules", "error", err)
+		slog.Error("Failed to get enabled schedules", "error", err)
 		return
 	}
 
@@ -100,13 +98,13 @@ func (r *Runner) publishTrigger(schedule *core.Schedule, now time.Time) {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		r.logger.Error("Failed to marshal trigger message", "schedule_id", schedule.ID, "error", err)
+		slog.Error("Failed to marshal trigger message", "schedule_id", schedule.ID, "error", err)
 		return
 	}
 
-	subject := "schedules.trigger." + schedule.ID.String()
+	subject := core.ScheduleTriggerSubject(schedule.ID)
 	if err := r.pub.Publish(subject, data); err != nil {
-		r.logger.Error("Failed to publish schedule trigger", "schedule_id", schedule.ID, "error", err)
+		slog.Error("Failed to publish schedule trigger", "schedule_id", schedule.ID, "error", err)
 		return
 	}
 
@@ -114,7 +112,7 @@ func (r *Runner) publishTrigger(schedule *core.Schedule, now time.Time) {
 	schedule.LastRun = &now
 	cs, err := ParseCron(schedule.Cron)
 	if err != nil {
-		r.logger.Error("Failed to parse cron for next run", "schedule_id", schedule.ID, "error", err)
+		slog.Error("Failed to parse cron for next run", "schedule_id", schedule.ID, "error", err)
 		schedule.NextRun = nil
 	} else {
 		next := cs.Next(now)
@@ -126,7 +124,7 @@ func (r *Runner) publishTrigger(schedule *core.Schedule, now time.Time) {
 	}
 
 	if err := r.archive.SaveSchedule(schedule); err != nil {
-		r.logger.Error("Failed to update schedule after trigger", "schedule_id", schedule.ID, "error", err)
+		slog.Error("Failed to update schedule after trigger", "schedule_id", schedule.ID, "error", err)
 	}
 }
 
@@ -136,7 +134,7 @@ func (r *Runner) consumeLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.logger.Info("Schedule consume loop stopping")
+			slog.Info("Schedule consume loop stopping")
 			return
 		default:
 		}
@@ -146,7 +144,7 @@ func (r *Runner) consumeLoop(ctx context.Context) {
 			if errors.Is(err, app.ErrFetchTimeout) {
 				continue
 			}
-			r.logger.Error("Schedule runner fetch failed", "error", err)
+			slog.Error("Schedule runner fetch failed", "error", err)
 			continue
 		}
 
@@ -161,28 +159,28 @@ func (r *Runner) consumeLoop(ctx context.Context) {
 func (r *Runner) processTrigger(msg *app.Msg) {
 	var trigger triggerMessage
 	if err := json.Unmarshal(msg.Data, &trigger); err != nil {
-		r.logger.Error("Failed to unmarshal trigger message", "error", err, "subject", msg.Subject)
+		slog.Error("Failed to unmarshal trigger message", "error", err, "subject", msg.Subject)
 		_ = msg.Term()
 		return
 	}
 
 	schedule, err := r.archive.GetSchedule(trigger.ScheduleID)
 	if err != nil {
-		r.logger.Error("Failed to load schedule for trigger", "schedule_id", trigger.ScheduleID, "error", err)
+		slog.Error("Failed to load schedule for trigger", "schedule_id", trigger.ScheduleID, "error", err)
 		_ = msg.Term() // Schedule may have been deleted; don't redeliver.
 		return
 	}
 
 	// Skip if schedule has been disabled since the trigger was published.
 	if !schedule.Enabled {
-		r.logger.Info("Schedule disabled, skipping trigger", "schedule_id", schedule.ID)
+		slog.Info("Schedule disabled, skipping trigger", "schedule_id", schedule.ID)
 		_ = msg.Ack()
 		return
 	}
 
 	jobType, ok := core.ScheduleActionJobType(schedule.Action.Type)
 	if !ok {
-		r.logger.Error("Unknown action type for schedule", "schedule_id", schedule.ID, "action_type", schedule.Action.Type)
+		slog.Error("Unknown action type for schedule", "schedule_id", schedule.ID, "action_type", schedule.Action.Type)
 		_ = msg.Term()
 		return
 	}
@@ -194,12 +192,12 @@ func (r *Runner) processTrigger(msg *app.Msg) {
 
 	job, err := jobs.CreateJob(r.archive, r.pub, repoID, schedule.CreatedBy, jobType, buildScheduleParams(schedule))
 	if err != nil {
-		r.logger.Error("Failed to create job from schedule trigger", "schedule_id", schedule.ID, "error", err)
+		slog.Error("Failed to create job from schedule trigger", "schedule_id", schedule.ID, "error", err)
 		_ = msg.Nak() // Redeliver to retry.
 		return
 	}
 
-	r.logger.Info("Created job from schedule trigger",
+	slog.Info("Created job from schedule trigger",
 		"schedule_id", schedule.ID,
 		"job_id", job.ID,
 		"job_type", job.Type,

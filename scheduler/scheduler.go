@@ -5,7 +5,6 @@ package scheduler
 
 import (
 	"log/slog"
-	"os"
 
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
@@ -18,7 +17,6 @@ type Module struct {
 	archive  core.Archive
 	pub      app.Publisher
 	consumer app.Consumer
-	logger   *slog.Logger
 }
 
 // Name returns the module name.
@@ -28,8 +26,7 @@ func (m *Module) Name() string {
 
 // Init initialises the scheduler module.
 func (m *Module) Init(_ map[string]any) error {
-	m.logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	m.logger.Info("Initialised scheduler module")
+	slog.Info("Initialised scheduler module")
 	return nil
 }
 

@@ -3,6 +3,7 @@ package scheduler
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -380,27 +381,21 @@ func (m *Module) computeNextRun(schedule *core.Schedule) {
 	schedule.NextRun = &next
 }
 
-// publishEvent publishes a schedule event to JetStream. Schedule events use
-// uuid.Nil as RepoID since schedules are global (not repo-scoped).
+// publishEvent publishes a schedule event. Schedule events derive their repoID
+// from the action's RepoID when present; otherwise uuid.Nil is used since
+// schedules are global (not repo-scoped). Errors are logged rather than
+// swallowed so failures are visible in the application log.
 func (m *Module) publishEvent(eventType core.EventType, payload any) {
 	if m.pub == nil {
 		return
 	}
-
 	repoID := uuid.Nil
 	if p, ok := payload.(core.EventSchedulePayload); ok && p.Schedule != nil && p.Schedule.Action.RepoID != nil {
 		repoID = *p.Schedule.Action.RepoID
 	}
-
-	evt, err := core.NewEvent(eventType, repoID, payload)
-	if err != nil {
-		return
+	if err := m.pub.PublishEvent(eventType, repoID, payload); err != nil {
+		slog.Error("Failed to publish event", "type", eventType, "error", err)
 	}
-	data, err := json.Marshal(evt)
-	if err != nil {
-		return
-	}
-	_ = m.pub.Publish(evt.Subject(), data)
 }
 
 // validateAction checks that a ScheduleAction has valid and complete fields.

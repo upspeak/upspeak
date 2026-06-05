@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -127,25 +126,22 @@ type moduleMount struct {
 // App is the main application container that manages modules, HTTP routing,
 // and the application lifecycle.
 type App struct {
-	config     Config
-	subscriber Subscriber
-	httpServer *http.Server
-	httpRouter *http.ServeMux
-	modules    map[string]moduleMount // Module name -> moduleMount
-	rootModule   string                 // Track which module (if any) is at root
-	logger       *slog.Logger
-	ready        bool
-	readyLock    sync.RWMutex
+	config        Config
+	subscriber    Subscriber
+	httpServer    *http.Server
+	httpRouter    *http.ServeMux
+	modules       map[string]moduleMount // Module name -> moduleMount
+	rootModule    string                 // Track which module (if any) is at root
+	ready         bool
+	readyLock     sync.RWMutex
 	modulesInited bool
 }
 
 // New creates a new App instance from a given Config.
 func New(config Config) *App {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	return &App{
 		config:     config,
 		httpRouter: http.NewServeMux(),
-		logger:     logger,
 		modules:    make(map[string]moduleMount),
 	}
 }
@@ -154,13 +150,6 @@ func New(config Config) *App {
 // This must be called before Start() if any module defines MsgHandlers.
 func (a *App) SetSubscriber(sub Subscriber) {
 	a.subscriber = sub
-}
-
-// Logger returns the application's logger. main.go threads this into modules
-// (via SetLogger) and runners so the entire application logs through a single
-// configured handler rather than each component building its own.
-func (a *App) Logger() *slog.Logger {
-	return a.logger
 }
 
 // normalizePath normalises a mount path for consistent handling.
@@ -227,7 +216,7 @@ func (a *App) AddModuleOnPath(module Module, path string) error {
 		a.rootModule = moduleName
 	}
 
-	a.logger.Info("Adding module",
+	slog.Info("Adding module",
 		"module", moduleName,
 		"path", normalizedPath,
 		"isRoot", normalizedPath == "")
@@ -253,11 +242,11 @@ func (a *App) registerModule(name string, mount moduleMount) error {
 	modConfig, exists := a.config.Modules[name]
 
 	if exists && !modConfig.Enabled {
-		a.logger.Warn("Skipping disabled module", "module", name)
+		slog.Warn("Skipping disabled module", "module", name)
 		return nil
 	}
 
-	a.logger.Info("Initialising module", "module", name)
+	slog.Info("Initialising module", "module", name)
 
 	var moduleConfig map[string]any
 	if exists {
@@ -265,14 +254,14 @@ func (a *App) registerModule(name string, mount moduleMount) error {
 	}
 
 	if err := module.Init(moduleConfig); err != nil {
-		a.logger.Error("Failed to initialise module", "module", name, "error", err)
+		slog.Error("Failed to initialise module", "module", name, "error", err)
 		return err
 	}
 
 	// Register message handlers via subscriber.
 	if a.subscriber != nil {
 		for _, handler := range module.MsgHandlers() {
-			a.logger.Info("Subscribing to subject",
+			slog.Info("Subscribing to subject",
 				"subject", handler.Subject,
 				"module", name)
 			if err := a.subscriber.Subscribe(handler.Subject, handler.Handler); err != nil {
@@ -284,7 +273,7 @@ func (a *App) registerModule(name string, mount moduleMount) error {
 	// Register HTTP handlers.
 	for _, handler := range module.HTTPHandlers() {
 		fullPath := a.buildHandlerPath(mount.path, handler.Path)
-		a.logger.Info("Registering HTTP handler",
+		slog.Info("Registering HTTP handler",
 			"path", fullPath,
 			"module", name,
 			"method", handler.Method)
@@ -312,7 +301,7 @@ func (a *App) InitModules() error {
 	if a.modulesInited {
 		return nil
 	}
-	a.logger.Info("Initialising modules", "name", a.config.Name)
+	slog.Info("Initialising modules", "name", a.config.Name)
 
 	// Register all non-root modules first.
 	for name, mount := range a.modules {
@@ -333,7 +322,7 @@ func (a *App) InitModules() error {
 	}
 
 	// Register health and readiness endpoints.
-	a.logger.Info("Registering health and readiness endpoints")
+	slog.Info("Registering health and readiness endpoints")
 	a.httpRouter.HandleFunc("GET /healthz", a.healthzHandler)
 	a.httpRouter.HandleFunc("GET /readiness", a.readinessHandler)
 
@@ -355,9 +344,9 @@ func (a *App) Start() error {
 			Handler:           api.SecurityHeaders(api.RequestID(a.httpRouter)),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
-		a.logger.Info("Starting HTTP server...", "port", a.config.HTTP.Port)
+		slog.Info("Starting HTTP server...", "port", a.config.HTTP.Port)
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			a.logger.Error("HTTP server failed", "error", err)
+			slog.Error("HTTP server failed", "error", err)
 			serverErr <- err
 		}
 		close(serverErr)
@@ -376,13 +365,13 @@ func (a *App) Start() error {
 	a.ready = true
 	a.readyLock.Unlock()
 
-	a.logger.Info("App is ready")
+	slog.Info("App is ready")
 	return nil
 }
 
 // Stop gracefully shuts down the application.
 func (a *App) Stop() error {
-	a.logger.Info("Stopping app...")
+	slog.Info("Stopping app...")
 
 	a.stopHttpServer()
 
@@ -390,20 +379,20 @@ func (a *App) Stop() error {
 	a.ready = false
 	a.readyLock.Unlock()
 
-	a.logger.Info("App stopped")
+	slog.Info("App stopped")
 	return nil
 }
 
 func (a *App) stopHttpServer() {
-	a.logger.Info("Stopping HTTP server...")
+	slog.Info("Stopping HTTP server...")
 	if a.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := a.httpServer.Shutdown(ctx); err != nil {
-			a.logger.Error("Failed to shut down HTTP server", "error", err)
+			slog.Error("Failed to shut down HTTP server", "error", err)
 		} else {
-			a.logger.Info("HTTP server stopped.")
+			slog.Info("HTTP server stopped.")
 		}
 	}
 }

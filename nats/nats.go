@@ -3,7 +3,6 @@ package nats
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
@@ -22,18 +21,16 @@ type Config struct {
 // Bus manages the NATS connection, optional embedded server, and JetStream context.
 // It provides Publisher, Subscriber, and Consumer implementations for the app framework.
 type Bus struct {
-	nc     *nats.Conn
-	js     nats.JetStreamContext
-	ns     *server.Server
-	logger *slog.Logger
+	nc *nats.Conn
+	js nats.JetStreamContext
+	ns *server.Server
 }
 
 // Start creates and starts a new NATS Bus. If config.Embedded is true, an
 // in-process NATS server with JetStream is started. Otherwise, connects to
 // the external NATS server at config.URL.
 func Start(appName string, config Config) (*Bus, error) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	bus := &Bus{logger: logger}
+	bus := &Bus{}
 
 	if config.Embedded {
 		ns, err := startEmbeddedServer(appName, config)
@@ -41,22 +38,22 @@ func Start(appName string, config Config) (*Bus, error) {
 			return nil, fmt.Errorf("failed to start embedded NATS server: %w", err)
 		}
 		bus.ns = ns
-		logger.Info("Started embedded NATS server", "name", appName)
+		slog.Info("Started embedded NATS server", "name", appName)
 
-		nc, err := connectToEmbedded(appName, ns, config, logger)
+		nc, err := connectToEmbedded(appName, ns, config)
 		if err != nil {
 			ns.Shutdown()
 			return nil, fmt.Errorf("failed to connect to embedded NATS server: %w", err)
 		}
 		bus.nc = nc
-		logger.Info("Connected to embedded NATS server", "private", config.Private)
+		slog.Info("Connected to embedded NATS server", "private", config.Private)
 	} else {
-		nc, err := connectToExternal(appName, config, logger)
+		nc, err := connectToExternal(appName, config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to NATS server at %s: %w", config.URL, err)
 		}
 		bus.nc = nc
-		logger.Info("Connected to external NATS server", "url", config.URL)
+		slog.Info("Connected to external NATS server", "url", config.URL)
 	}
 
 	// Obtain JetStream context for the connection.
@@ -77,19 +74,19 @@ func Start(appName string, config Config) (*Bus, error) {
 // Drain unsubscribes all subscriptions, waits for in-flight message handlers to
 // complete, flushes the publish buffer, then closes the connection.
 func (b *Bus) Stop() {
-	b.logger.Info("Stopping NATS...")
+	slog.Info("Stopping NATS...")
 	if b.nc != nil {
 		if err := b.nc.Drain(); err != nil {
-			b.logger.Error("Failed to drain NATS connection, forcing close", "error", err)
+			slog.Error("Failed to drain NATS connection, forcing close", "error", err)
 			b.nc.Close()
 		} else {
-			b.logger.Info("NATS connection drained")
+			slog.Info("NATS connection drained")
 		}
 	}
 	if b.ns != nil {
 		b.ns.Shutdown()
 		b.ns.WaitForShutdown()
-		b.logger.Info("Embedded NATS server stopped")
+		slog.Info("Embedded NATS server stopped")
 	}
 }
 
@@ -114,30 +111,30 @@ func (b *Bus) Subscriber() app.Subscriber {
 }
 
 // connectionHandlers returns common NATS connection option handlers for logging.
-func connectionHandlers(logger *slog.Logger) []nats.Option {
+func connectionHandlers() []nats.Option {
 	return []nats.Option{
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			if err != nil {
-				logger.Warn("NATS disconnected", "error", err)
+				slog.Warn("NATS disconnected", "error", err)
 			} else {
-				logger.Info("NATS disconnected")
+				slog.Info("NATS disconnected")
 			}
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
-			logger.Info("NATS reconnected", "url", nc.ConnectedUrl())
+			slog.Info("NATS reconnected", "url", nc.ConnectedUrl())
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
 			if err := nc.LastError(); err != nil {
-				logger.Error("NATS connection closed", "error", err)
+				slog.Error("NATS connection closed", "error", err)
 			} else {
-				logger.Info("NATS connection closed")
+				slog.Info("NATS connection closed")
 			}
 		}),
 		nats.ErrorHandler(func(_ *nats.Conn, sub *nats.Subscription, err error) {
 			if sub != nil {
-				logger.Error("NATS async error", "subject", sub.Subject, "error", err)
+				slog.Error("NATS async error", "subject", sub.Subject, "error", err)
 			} else {
-				logger.Error("NATS async error", "error", err)
+				slog.Error("NATS async error", "error", err)
 			}
 		}),
 	}
@@ -169,14 +166,14 @@ func startEmbeddedServer(appName string, config Config) (*server.Server, error) 
 	return ns, nil
 }
 
-func connectToEmbedded(appName string, ns *server.Server, config Config, logger *slog.Logger) (*nats.Conn, error) {
+func connectToEmbedded(appName string, ns *server.Server, config Config) (*nats.Conn, error) {
 	opts := []nats.Option{
 		nats.Name(fmt.Sprintf("%s-nats-client", appName)),
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(500 * time.Millisecond),
 		nats.ReconnectBufSize(8 << 20), // 8 MB
 	}
-	opts = append(opts, connectionHandlers(logger)...)
+	opts = append(opts, connectionHandlers()...)
 
 	if config.Private {
 		opts = append(opts, nats.InProcessServer(ns))
@@ -184,7 +181,7 @@ func connectToEmbedded(appName string, ns *server.Server, config Config, logger 
 	return nats.Connect(nats.DefaultURL, opts...)
 }
 
-func connectToExternal(appName string, config Config, logger *slog.Logger) (*nats.Conn, error) {
+func connectToExternal(appName string, config Config) (*nats.Conn, error) {
 	opts := []nats.Option{
 		nats.Name(fmt.Sprintf("%s-nats-client", appName)),
 		nats.Timeout(5 * time.Second),
@@ -193,7 +190,7 @@ func connectToExternal(appName string, config Config, logger *slog.Logger) (*nat
 		nats.ReconnectJitter(100*time.Millisecond, time.Second),
 		nats.ReconnectBufSize(8 << 20), // 8 MB
 	}
-	opts = append(opts, connectionHandlers(logger)...)
+	opts = append(opts, connectionHandlers()...)
 
 	return nats.Connect(config.URL, opts...)
 }

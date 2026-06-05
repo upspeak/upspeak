@@ -3,11 +3,13 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/upspeak/upspeak/api"
 )
 
 // handleWS upgrades an HTTP request to a WebSocket, registers the connection
@@ -15,13 +17,13 @@ import (
 func (m *Module) handleWS(w http.ResponseWriter, r *http.Request) {
 	identity, err := m.auth.Authenticate(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		api.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 		return
 	}
 
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		m.logger.Warn("realtime: websocket upgrade failed", "error", err)
+		slog.Warn("realtime: websocket upgrade failed", "error", err)
 		return
 	}
 	defer c.CloseNow()
@@ -128,7 +130,7 @@ func (m *Module) flushDropped(ctx context.Context, c *websocket.Conn, conn *conn
 func (m *Module) writeJSON(ctx context.Context, c *websocket.Conn, v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		m.logger.Warn("realtime: failed to marshal outbound message", "error", err)
+		slog.Warn("realtime: failed to marshal outbound message", "error", err)
 		return
 	}
 	_ = c.Write(ctx, websocket.MessageText, data)

@@ -14,7 +14,6 @@ import (
 // subscription. Ingestion is buffered so events can arrive (via the framework's
 // repo.*.events.> subscription) before the dispatch loop starts.
 type hub struct {
-	logger   *slog.Logger
 	ingestCh chan *core.Event
 
 	mu         sync.RWMutex
@@ -23,9 +22,8 @@ type hub struct {
 }
 
 // newHub creates a hub with an empty registry and a buffered ingest channel.
-func newHub(logger *slog.Logger) *hub {
+func newHub() *hub {
 	return &hub{
-		logger:     logger,
 		ingestCh:   make(chan *core.Event, ingestBufferSize),
 		conns:      make(map[*connection]struct{}),
 		byIdentity: make(map[string]int),
@@ -39,7 +37,7 @@ func (h *hub) ingest(ev *core.Event) {
 	select {
 	case h.ingestCh <- ev:
 	default:
-		h.logger.Warn("realtime: ingest buffer full, dropping event", "type", ev.Type)
+		slog.Warn("realtime: ingest buffer full, dropping event", "type", ev.Type)
 	}
 }
 
@@ -90,7 +88,7 @@ func (h *hub) dispatch(ev *core.Event) {
 		Timestamp: ev.Timestamp,
 	})
 	if err != nil {
-		h.logger.Warn("realtime: failed to encode event", "error", err)
+		slog.Warn("realtime: failed to encode event", "error", err)
 		return
 	}
 
@@ -101,7 +99,7 @@ func (h *hub) dispatch(ev *core.Event) {
 			}
 			frame, err := buildFrame(sub.channel, body)
 			if err != nil {
-				h.logger.Warn("realtime: failed to encode frame", "error", err)
+				slog.Warn("realtime: failed to encode frame", "error", err)
 				continue
 			}
 			c.enqueue(frame)

@@ -47,22 +47,21 @@ type Engine struct {
 	archive  core.Archive
 	pub      app.Publisher
 	consumer app.Consumer
-	logger   *slog.Logger
 }
 
 // NewEngine constructs a rules engine with its dependencies.
-func NewEngine(archive core.Archive, pub app.Publisher, consumer app.Consumer, logger *slog.Logger) *Engine {
-	return &Engine{archive: archive, pub: pub, consumer: consumer, logger: logger}
+func NewEngine(archive core.Archive, pub app.Publisher, consumer app.Consumer) *Engine {
+	return &Engine{archive: archive, pub: pub, consumer: consumer}
 }
 
 // Run starts the engine's consume loop. It blocks until the context is cancelled.
 func (e *Engine) Run(ctx context.Context) {
-	e.logger.Info("Rules engine started")
+	slog.Info("Rules engine started")
 
 	for {
 		select {
 		case <-ctx.Done():
-			e.logger.Info("Rules engine stopping")
+			slog.Info("Rules engine stopping")
 			return
 		default:
 		}
@@ -72,7 +71,7 @@ func (e *Engine) Run(ctx context.Context) {
 			if errors.Is(err, app.ErrFetchTimeout) {
 				continue // No messages available, try again.
 			}
-			e.logger.Error("Rules engine fetch failed", "error", err)
+			slog.Error("Rules engine fetch failed", "error", err)
 			continue
 		}
 
@@ -102,7 +101,7 @@ func (e *Engine) processMessage(msg *app.Msg) {
 func (e *Engine) dispatch(data []byte) ackDecision {
 	var evt core.Event
 	if err := json.Unmarshal(data, &evt); err != nil {
-		e.logger.Error("Failed to unmarshal event", "error", err)
+		slog.Error("Failed to unmarshal event", "error", err)
 		return ackTerm // Malformed envelope; redelivery cannot help.
 	}
 
@@ -112,14 +111,14 @@ func (e *Engine) dispatch(data []byte) ackDecision {
 		return ackOK
 	}
 	if evt.Hops >= maxRuleHops {
-		e.logger.Warn("Dropping event exceeding max rule hops", "event", evt.Type, "hops", evt.Hops)
+		slog.Warn("Dropping event exceeding max rule hops", "event", evt.Type, "hops", evt.Hops)
 		return ackOK
 	}
 
 	rules, err := e.archive.GetActiveRulesForEvent(evt.RepoID, evt.Type)
 	if err != nil {
 		// Transient: no actions have run yet, so redeliver rather than drop.
-		e.logger.Error("Failed to load active rules", "repo_id", evt.RepoID, "event", evt.Type, "error", err)
+		slog.Error("Failed to load active rules", "repo_id", evt.RepoID, "event", evt.Type, "error", err)
 		return ackRetry
 	}
 	if len(rules) == 0 {
@@ -134,7 +133,7 @@ func (e *Engine) dispatch(data []byte) ackDecision {
 	var payload map[string]any
 	if len(evt.Payload) > 0 {
 		if err := json.Unmarshal(evt.Payload, &payload); err != nil {
-			e.logger.Error("Failed to unmarshal event payload", "event", evt.Type, "error", err)
+			slog.Error("Failed to unmarshal event payload", "event", evt.Type, "error", err)
 			return ackTerm // Malformed payload; redelivery cannot help.
 		}
 	}
@@ -167,7 +166,7 @@ func (e *Engine) evaluateAndFire(rule *core.Rule, evt *core.Event, payload map[s
 		DurationMs:      duration.Milliseconds(),
 	}
 	if err := e.archive.SaveRuleExecution(exec); err != nil {
-		e.logger.Error("Failed to record rule execution", "rule_id", rule.ID, "error", err)
+		slog.Error("Failed to record rule execution", "rule_id", rule.ID, "error", err)
 	}
 
 	e.publishTriggered(rule, evt, exec)
@@ -181,7 +180,7 @@ func (e *Engine) evaluateTrigger(rule *core.Rule, payload map[string]any) bool {
 	for _, fid := range rule.Trigger.FilterIDs {
 		f, err := e.archive.GetFilter(fid)
 		if err != nil {
-			e.logger.Error("Failed to load rule filter", "rule_id", rule.ID, "filter_id", fid, "error", err)
+			slog.Error("Failed to load rule filter", "rule_id", rule.ID, "filter_id", fid, "error", err)
 			return false
 		}
 		if !filter.Evaluate(f, payload).Matches {
@@ -201,7 +200,7 @@ func (e *Engine) executeActions(rule *core.Rule, payload map[string]any) []core.
 		if err := e.executeAction(rule, action, payload); err != nil {
 			entry.Result = "error"
 			entry.Error = err.Error()
-			e.logger.Error("Rule action failed", "rule_id", rule.ID, "action", action.Type, "error", err)
+			slog.Error("Rule action failed", "rule_id", rule.ID, "action", action.Type, "error", err)
 		}
 		entries = append(entries, entry)
 	}
@@ -291,18 +290,18 @@ func (e *Engine) publishTriggered(rule *core.Rule, evt *core.Event, exec *core.R
 	}
 	outEvt, err := core.NewEvent(core.EventRuleTriggered, rule.RepoID, payload)
 	if err != nil {
-		e.logger.Error("Failed to create RuleTriggered event", "error", err)
+		slog.Error("Failed to create RuleTriggered event", "error", err)
 		return
 	}
 	// Propagate the hop count so any reaction chain is bounded by maxRuleHops.
 	outEvt.Hops = evt.Hops + 1
 	out, err := json.Marshal(outEvt)
 	if err != nil {
-		e.logger.Error("Failed to marshal RuleTriggered event", "error", err)
+		slog.Error("Failed to marshal RuleTriggered event", "error", err)
 		return
 	}
 	if err := e.pub.Publish(outEvt.Subject(), out); err != nil {
-		e.logger.Error("Failed to publish RuleTriggered event", "subject", outEvt.Subject(), "error", err)
+		slog.Error("Failed to publish RuleTriggered event", "subject", outEvt.Subject(), "error", err)
 	}
 }
 

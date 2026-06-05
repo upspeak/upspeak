@@ -21,6 +21,10 @@ import (
 )
 
 func main() {
+	// Bootstrap the single application logger. Every component logs through this
+	// default via package-level slog functions and never creates its own.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
 	config, err := app.LoadConfig("upspeak.yaml")
 	if err != nil {
 		slog.Error("Error loading config", "error", err)
@@ -185,29 +189,28 @@ func main() {
 	}
 	schedulerModule.SetConsumer(scheduleConsumer)
 
-	// Start the job runner in a background goroutine.
-	runnerCtx, cancelRunner := context.WithCancel(context.Background())
-	runner := jobs.NewRunner(a, jobConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	go runner.Run(runnerCtx)
-
-	// Start the schedule runner in a background goroutine.
-	schedRunner := scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	go schedRunner.Run(runnerCtx)
-
-	// Start the rules engine as a durable consumer on the REPO_EVENTS stream.
-	// Created after archive wiring so its loop never runs before dependencies are
-	// set; durable delivery means events are not lost across restarts.
+	// The rules engine consumes the durable REPO_EVENTS stream. Created after
+	// archive wiring so its loop never runs before dependencies are set; durable
+	// delivery means events are not lost across restarts.
 	rulesConsumer, err := usnats.NewConsumer(bus, usnats.RepoEventsSubject, usnats.ConsumerRulesEngine)
 	if err != nil {
 		slog.Error("Error creating rules-engine consumer subscription", "error", err)
 		os.Exit(1)
 	}
-	rulesEngine := rules.NewEngine(a, bus.Publisher(), rulesConsumer, slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	go rulesEngine.Run(runnerCtx)
 
-	// Start the realtime hub dispatch loop. Events buffered before it starts are
-	// drained once it runs; the loop stops when runnerCtx is cancelled.
-	go realtimeModule.Run(runnerCtx)
+	// Start every background loop uniformly through the app.Runner contract.
+	// Events buffered before the realtime hub starts are drained once it runs;
+	// all loops stop when runnerCtx is cancelled.
+	runnerCtx, cancelRunner := context.WithCancel(context.Background())
+	runners := []app.Runner{
+		jobs.NewRunner(a, jobConsumer),
+		scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer),
+		rules.NewEngine(a, bus.Publisher(), rulesConsumer),
+		realtimeModule,
+	}
+	for _, r := range runners {
+		go r.Run(runnerCtx)
+	}
 
 	// Start HTTP server.
 	if err := up.Start(); err != nil {

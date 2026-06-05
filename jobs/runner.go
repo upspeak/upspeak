@@ -18,15 +18,13 @@ import (
 type Runner struct {
 	archive  core.Archive
 	consumer app.Consumer
-	logger   *slog.Logger
 }
 
 // NewRunner creates a new job runner.
-func NewRunner(archive core.Archive, consumer app.Consumer, logger *slog.Logger) *Runner {
+func NewRunner(archive core.Archive, consumer app.Consumer) *Runner {
 	return &Runner{
 		archive:  archive,
 		consumer: consumer,
-		logger:   logger,
 	}
 }
 
@@ -34,12 +32,12 @@ func NewRunner(archive core.Archive, consumer app.Consumer, logger *slog.Logger)
 // The runner fetches messages from the JOBS stream, processes them, and
 // updates job status in the archive.
 func (r *Runner) Run(ctx context.Context) {
-	r.logger.Info("Job runner started")
+	slog.Info("Job runner started")
 
 	for {
 		select {
 		case <-ctx.Done():
-			r.logger.Info("Job runner stopping")
+			slog.Info("Job runner stopping")
 			return
 		default:
 		}
@@ -49,7 +47,7 @@ func (r *Runner) Run(ctx context.Context) {
 			if errors.Is(err, app.ErrFetchTimeout) {
 				continue // No messages available, try again.
 			}
-			r.logger.Error("Job runner fetch failed", "error", err)
+			slog.Error("Job runner fetch failed", "error", err)
 			continue
 		}
 
@@ -63,23 +61,23 @@ func (r *Runner) Run(ctx context.Context) {
 func (r *Runner) processMessage(msg *app.Msg) {
 	var job core.Job
 	if err := json.Unmarshal(msg.Data, &job); err != nil {
-		r.logger.Error("Failed to unmarshal job message", "error", err, "subject", msg.Subject)
+		slog.Error("Failed to unmarshal job message", "error", err, "subject", msg.Subject)
 		_ = msg.Term() // Bad message, don't redeliver.
 		return
 	}
 
-	r.logger.Info("Processing job", "id", job.ID, "type", job.Type, "short_id", job.ShortID)
+	slog.Info("Processing job", "id", job.ID, "type", job.Type, "short_id", job.ShortID)
 
 	// Refresh job from archive to check for cancellation.
 	current, err := r.archive.GetJob(job.ID)
 	if err != nil {
-		r.logger.Error("Failed to load job from archive", "id", job.ID, "error", err)
+		slog.Error("Failed to load job from archive", "id", job.ID, "error", err)
 		_ = msg.Nak() // Redeliver.
 		return
 	}
 
 	if current.Status == core.JobStatusCancelled {
-		r.logger.Info("Job already cancelled, skipping", "id", job.ID)
+		slog.Info("Job already cancelled, skipping", "id", job.ID)
 		_ = msg.Ack()
 		return
 	}
@@ -89,7 +87,7 @@ func (r *Runner) processMessage(msg *app.Msg) {
 	current.Status = core.JobStatusRunning
 	current.StartedAt = &now
 	if err := r.archive.SaveJob(current); err != nil {
-		r.logger.Error("Failed to update job status to running", "id", job.ID, "error", err)
+		slog.Error("Failed to update job status to running", "id", job.ID, "error", err)
 		_ = msg.Nak()
 		return
 	}
@@ -103,7 +101,7 @@ func (r *Runner) processMessage(msg *app.Msg) {
 	// Check for cancellation again after execution.
 	refreshed, err := r.archive.GetJob(job.ID)
 	if err == nil && refreshed.Status == core.JobStatusCancelled {
-		r.logger.Info("Job cancelled during execution", "id", job.ID)
+		slog.Info("Job cancelled during execution", "id", job.ID)
 		_ = msg.Ack()
 		return
 	}
@@ -121,13 +119,13 @@ func (r *Runner) processMessage(msg *app.Msg) {
 	current.CompletedAt = &completedAt
 
 	if err := r.archive.SaveJob(current); err != nil {
-		r.logger.Error("Failed to update job final status", "id", job.ID, "error", err)
+		slog.Error("Failed to update job final status", "id", job.ID, "error", err)
 		_ = msg.Nak()
 		return
 	}
 
 	_ = msg.Ack()
-	r.logger.Info("Job completed", "id", job.ID, "status", current.Status)
+	slog.Info("Job completed", "id", job.ID, "status", current.Status)
 }
 
 // execute dispatches the job to the appropriate type-specific handler.
@@ -182,7 +180,7 @@ func (r *Runner) executeCollect(job *core.Job) (json.RawMessage, error) {
 	// For now, the actual fetching logic (RSS, Discourse, etc.) is not
 	// implemented — we record a successful completion to wire the full
 	// lifecycle. Real connector backends will be plugged in here.
-	r.logger.Info("Executing collect job",
+	slog.Info("Executing collect job",
 		"source_id", source.ID,
 		"connector", source.Connector,
 		"repo_id", job.RepoID,
@@ -200,7 +198,7 @@ func (r *Runner) executeCollect(job *core.Job) (json.RawMessage, error) {
 		DurationMs: durationMs,
 	}
 	if err := r.archive.RecordCollectionAttempt(record); err != nil {
-		r.logger.Error("Failed to record collection history", "error", err)
+		slog.Error("Failed to record collection history", "error", err)
 	}
 
 	result, _ := json.Marshal(map[string]any{
@@ -243,7 +241,7 @@ func (r *Runner) executePublish(job *core.Job) (json.RawMessage, error) {
 
 	// Execute publish based on connector type.
 	// Real connector backends will be plugged in here.
-	r.logger.Info("Executing publish job",
+	slog.Info("Executing publish job",
 		"sink_id", sink.ID,
 		"connector", sink.Connector,
 		"repo_id", job.RepoID,
@@ -261,7 +259,7 @@ func (r *Runner) executePublish(job *core.Job) (json.RawMessage, error) {
 		DurationMs: durationMs,
 	}
 	if err := r.archive.RecordPublishAttempt(record); err != nil {
-		r.logger.Error("Failed to record publish history", "error", err)
+		slog.Error("Failed to record publish history", "error", err)
 	}
 
 	result, _ := json.Marshal(map[string]any{
@@ -275,7 +273,7 @@ func (r *Runner) executePublish(job *core.Job) (json.RawMessage, error) {
 
 func (r *Runner) executeSync(job *core.Job) (json.RawMessage, error) {
 	// Sync jobs are planned for Phase 6 (multi-device sync).
-	r.logger.Info("Sync job execution is not yet implemented")
+	slog.Info("Sync job execution is not yet implemented")
 	return json.RawMessage(`{"status":"not_implemented"}`), nil
 }
 
@@ -299,7 +297,7 @@ func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 
 	// One-shot URL collection. Real implementation would fetch the URL,
 	// parse content, and create nodes. For now, record completion.
-	r.logger.Info("Executing webhook job", "url", params.URL, "repo_id", job.RepoID)
+	slog.Info("Executing webhook job", "url", params.URL, "repo_id", job.RepoID)
 
 	result, _ := json.Marshal(map[string]any{
 		"url":    params.URL,

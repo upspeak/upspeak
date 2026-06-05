@@ -2,8 +2,6 @@ package rules
 
 import (
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -15,7 +13,7 @@ import (
 // publisher. The consumer is nil: tests drive the engine via dispatch() directly
 // rather than through the fetch loop.
 func testEngine(m *Module, pub *mockPublisher) *Engine {
-	return NewEngine(m.archive, pub, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewEngine(m.archive, pub, nil)
 }
 
 // saveRule persists a rule directly via the archive for engine tests.

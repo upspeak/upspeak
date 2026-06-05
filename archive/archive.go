@@ -3,7 +3,6 @@ package archive
 import (
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
@@ -13,7 +12,6 @@ import (
 // It handles persistent storage of domain entities.
 type ModuleArchive struct {
 	archive *LocalArchive
-	logger  *slog.Logger
 }
 
 // Config defines the configuration for the archive module.
@@ -29,8 +27,6 @@ func (m *ModuleArchive) Name() string {
 
 // Init initialises the archive module with the given configuration.
 func (m *ModuleArchive) Init(config map[string]any) error {
-	m.logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-
 	var cfg Config
 	if config != nil {
 		if archiveType, ok := config["type"].(string); ok {
@@ -55,7 +51,7 @@ func (m *ModuleArchive) Init(config map[string]any) error {
 			return fmt.Errorf("failed to create local archive: %w", err)
 		}
 		m.archive = localArchive
-		m.logger.Info("Initialised local archive", "path", cfg.Path)
+		slog.Info("Initialised local archive", "path", cfg.Path)
 	default:
 		return fmt.Errorf("unsupported archive type: %s", cfg.Type)
 	}

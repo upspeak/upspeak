@@ -3,8 +3,6 @@ package realtime
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -12,12 +10,8 @@ import (
 	"github.com/upspeak/upspeak/core"
 )
 
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
 func TestHub_DispatchDeliversToMatchingConnection(t *testing.T) {
-	h := newHub(testLogger())
+	h := newHub()
 	repo := uuid.New()
 
 	c := newConnection("c1", "local")
@@ -47,7 +41,7 @@ func TestHub_DispatchDeliversToMatchingConnection(t *testing.T) {
 }
 
 func TestHub_DispatchSkipsNonMatching(t *testing.T) {
-	h := newHub(testLogger())
+	h := newHub()
 	c := newConnection("c1", "local")
 	_ = c.addSubscription(&subscription{channel: "repos.research.events", kind: channelRepoEvents, repoID: uuid.New()})
 	h.add(c)
@@ -59,7 +53,7 @@ func TestHub_DispatchSkipsNonMatching(t *testing.T) {
 }
 
 func TestHub_PerIdentityConnectionCap(t *testing.T) {
-	h := newHub(testLogger())
+	h := newHub()
 	for i := 0; i < maxConnsPerIdentity; i++ {
 		if !h.add(newConnection("c", "local")) {
 			t.Fatalf("add %d should succeed", i)
@@ -71,7 +65,7 @@ func TestHub_PerIdentityConnectionCap(t *testing.T) {
 }
 
 func TestHub_RemoveFreesIdentitySlot(t *testing.T) {
-	h := newHub(testLogger())
+	h := newHub()
 	conns := make([]*connection, maxConnsPerIdentity)
 	for i := range conns {
 		conns[i] = newConnection("c", "local")
@@ -84,7 +78,7 @@ func TestHub_RemoveFreesIdentitySlot(t *testing.T) {
 }
 
 func TestHub_RunDispatchesIngestedEvents(t *testing.T) {
-	h := newHub(testLogger())
+	h := newHub()
 	repo := uuid.New()
 	c := newConnection("c1", "local")
 	_ = c.addSubscription(&subscription{channel: "repos.research.events", kind: channelRepoEvents, repoID: repo})

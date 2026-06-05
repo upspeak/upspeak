@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"os"
 
 	"github.com/upspeak/upspeak/app"
 	"github.com/upspeak/upspeak/core"
@@ -17,7 +16,6 @@ import (
 // in-process (see hub and subscription), so there is no JetStream consumer per
 // subscription.
 type Module struct {
-	logger   *slog.Logger
 	hub      *hub
 	auth     Authenticator
 	resolver refResolver
@@ -34,14 +32,13 @@ func (m *Module) Name() string {
 	return "realtime"
 }
 
-// Init initialises the module's logger, hub, and default authenticator.
+// Init initialises the module's hub and default authenticator.
 func (m *Module) Init(_ map[string]any) error {
-	m.logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
-	m.hub = newHub(m.logger)
+	m.hub = newHub()
 	if m.auth == nil {
 		m.auth = allowAllAuthenticator{}
 	}
-	m.logger.Info("Initialised realtime module")
+	slog.Info("Initialised realtime module")
 	return nil
 }
 
@@ -81,7 +78,7 @@ func (m *Module) MsgHandlers() []app.MsgHandler {
 func (m *Module) handleEvent(_ string, data []byte) {
 	var ev core.Event
 	if err := json.Unmarshal(data, &ev); err != nil {
-		m.logger.Warn("realtime: failed to decode event", "error", err)
+		slog.Warn("realtime: failed to decode event", "error", err)
 		return
 	}
 	m.hub.ingest(&ev)
