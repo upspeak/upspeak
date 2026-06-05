@@ -101,6 +101,17 @@ type Consumer interface {
 	Fetch(maxMsgs int, timeout time.Duration) ([]*Msg, error)
 }
 
+// AdapterRegistry resolves a connector type to its registered core.Adapter. It
+// lets the job runner (and, later, the connector module) dispatch to adapters
+// without importing the concrete integrations — breaking the connector↔jobs
+// import cycle. The concrete registry is built in main.go from the registered
+// integrations and injected via setter.
+type AdapterRegistry interface {
+	// AdapterFor returns the adapter registered for the connector type, and
+	// false when none is registered.
+	AdapterFor(connector core.ConnectorType) (core.Adapter, bool)
+}
+
 // Module is the interface that all application modules must implement.
 type Module interface {
 	Name() string
