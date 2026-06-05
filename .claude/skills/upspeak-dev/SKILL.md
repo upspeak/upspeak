@@ -4,7 +4,7 @@ description: Use when working on the Upspeak codebase — implementing features,
 compatibility: Designed for Claude Code. Requires Go 1.25+, SQLite (mattn/go-sqlite3), google/uuid
 metadata:
   author: upspeak
-  version: "0.5"
+  version: "0.6"
 ---
 
 # Upspeak Development
@@ -48,7 +48,7 @@ All entities: UUID v7 primary key, short ID (`NODE-42`), version (optimistic con
 ## core.Archive Sub-interfaces
 
 ```
-Archive = RepositoryStore + NodeStore + EdgeStore + ThreadStore + AnnotationStore + FilterStore + JobStore + SourceStore + SinkStore + ConnectorHistoryStore + ScheduleStore + RefResolver
+Archive = RepositoryStore + NodeStore + EdgeStore + ThreadStore + AnnotationStore + FilterStore + JobStore + SourceStore + SinkStore + ConnectorHistoryStore + ScheduleStore + RuleStore + SearchStore + RefResolver
 ```
 
 Modules that only need node operations can accept `core.NodeStore` instead of the full `core.Archive`. Sequence methods (`nextRepoSequence` etc.) are package-private in `archive/` — never on the interface.
@@ -72,15 +72,20 @@ Modules that only need node operations can accept `core.NodeStore` instead of th
 ## NATS Isolation
 
 Only `nats/` imports `github.com/nats-io/*`. Other packages use interfaces from `app/`:
-- `app.Publisher`: `Publish(subject, data) error` — JetStream-backed, delivery confirmed
-- `app.Subscriber`: `Subscribe(subject, handler) error` — core NATS fan-out
-- `app.Consumer`: `Fetch(maxMsgs, timeout) ([]*Msg, error)` — JetStream pull consumer with `Msg.Ack()`/`Nak()`
+- `app.Publisher`: `Publish(subject, data) error` **and** `PublishEvent(eventType, repoID, payload) error` — the latter builds the `core.Event` envelope (`NewEvent` + `Subject`) and publishes it, so modules never marshal events or hand-build subjects themselves. JetStream-backed, delivery confirmed.
+- `app.Subscriber`: `Subscribe(subject, handler) error` — core NATS fan-out (used by realtime for `repo.*.events.>`)
+- `app.Consumer`: `Fetch(maxMsgs, timeout) ([]*Msg, error)` — JetStream pull consumer with `Msg.Ack()`/`Nak()`/`InProgress()`/`Term()`
 
-Event subjects: `repo.{repo_id}.events.{EventType}` (e.g., `NodeCreated`, `EdgeDeleted`)
+Subject construction lives in `core`, never inline: `Event.Subject()` → `repo.{repo_id}.events.{EventType}`; `core.JobSubject`, `core.ScheduleTriggerSubject` for the work queues.
 
-**Streams:** `REPO_{repo_id}_EVENTS` (Limits), `JOBS` (WorkQueue, `jobs.>`), `SCHEDULES` (Phase 4).
-**Consumers:** Durable pull, AckExplicit. `job-runner` on JOBS. Others added per phase.
+**Streams (all global, created in `main.go`):** `REPO_EVENTS` (Limits, `repo.*.events.>` — one stream serves every repo; `nats/streams.go`), `JOBS` (WorkQueue, `jobs.>`), `SCHEDULES` (WorkQueue, `schedules.trigger.>`). The per-repo `CreateRepoStream` is **tests-only** and superseded — never wire it (it overlaps `REPO_EVENTS`).
+**Consumers:** Durable pull, AckExplicit, MaxDeliver=5, AckWait=30s — `job-runner` (JOBS), `schedule-runner` (SCHEDULES), `rules-engine` (REPO_EVENTS).
+**Event hops:** `core.Event.Hops` bounds rule-reaction cascades; the rules engine drops events past `maxRuleHops` and stamps `Hops+1` on events it emits.
 **Connection:** Drain() on shutdown, infinite reconnect with jitter, handler callbacks for logging.
+
+**Background loops** implement `app.Runner` (`Run(ctx)`) and are started uniformly from `main` via a `[]app.Runner` (jobs runner, scheduler runner, rules engine, realtime hub).
+
+**Logging:** one handler is set via `slog.SetDefault` in `main`; every package calls package-level `slog.Info/Error/…` directly. Never construct a logger or hold a `*slog.Logger` field/param.
 
 ## Module Wiring
 
@@ -109,11 +114,14 @@ Dependencies injected via setters, not constructor or handler params. `HTTPHandl
 | NATS Hardening | Done | JetStream publish, consumers, JOBS stream, connection management |
 | 3. Filters + Jobs | Done | Filter CRUD + engine, job tracking, NATS job runner |
 | 4. Connectors + Schedules | Done | Sources, sinks, rate limiting, cycle detection, cron, job execution + history |
-| 5. Rules + Search | Next | Rule engine, FTS5, graph traversal (cross-repo) |
-| 6. Real-time + Sync | Planned | WebSocket, multi-device sync, conflict resolution |
+| 5. Rules + Search | Done | Rule engine on global `REPO_EVENTS`, FTS5, graph traversal (cross-repo) |
+| 6a. Real-time | Done | WebSocket `/api/v1/ws`, Hub fan-out, server-side filtering, allow-all auth seam |
+| 6b. Sync | Deferred | Multi-device sync, tombstones, conflict resolution — not started |
 
-Full plan: `docs/superpowers/plans/2026-03-30-api-foundation.md`
-Full spec: `docs/specs/api-foundation/00-index.md` (18 files)
+> **Heads-up:** job executors, several connector types, async repo delete, thread publish, and three realtime channels are still **stubs**. Read `docs/next-steps.md` before assuming a path is fully implemented — it lists every stub and the remaining work. Social/federation is Phase 7+.
+
+Status, remaining work, and the in-code stub inventory: `docs/next-steps.md`
+Defining data-flow architecture: `assets/high-level-concepts-0.1.png`
 
 ## Where to Find Things
 
@@ -125,6 +133,9 @@ Full spec: `docs/specs/api-foundation/00-index.md` (18 files)
 - **Jobs module:** `jobs/jobs.go` (module + handlers + CreateJob helper), `jobs/runner.go` (JetStream consumer + execute handlers)
 - **Connector module:** `connector/connector.go` (module), `connector/handlers_source.go`, `connector/handlers_sink.go`, `connector/handlers_collect.go`, `connector/ratelimit.go`, `connector/cycle.go`
 - **Scheduler module:** `scheduler/scheduler.go` (module), `scheduler/handlers.go`, `scheduler/runner.go` (tick + consume loops), `scheduler/cron.go` (parser)
+- **Rules module:** `rules/rules.go` (module + CRUD/pause/resume/history), `rules/engine.go` (`REPO_EVENTS` consumer, trigger evaluation via filter engine, action dispatch)
+- **Search module:** `search/search.go` (module), search/browse/traverse handlers; FTS5 lives in `archive/search_store.go` (build tag `sqlite_fts5`)
+- **Realtime module:** `realtime/realtime.go` (module + `app.Runner` hub), `realtime/hub.go` (dispatch), `realtime/connection.go`, `realtime/subscription.go` + `realtime/match.go` (channels + filtering), `realtime/auth.go` (allow-all `Authenticator` seam)
 - **API helpers:** `api/envelope.go`, `api/http.go`, `api/middleware.go`
 - **Event types:** `core/events.go`, `core/shared_types.go`
 - **Identity:** `core/identity.go` (NewID, FormatShortID, ParseShortID, prefixes)
