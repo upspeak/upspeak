@@ -123,6 +123,12 @@ func TestPipeline_SourceBased_DedupsOnReingest(t *testing.T) {
 	if string(got.Body) != string(textBody("v2")) {
 		t.Fatalf("body not updated: %s", got.Body)
 	}
+	if got.SourceID == nil || *got.SourceID != src.ID {
+		t.Fatal("provenance SourceID not preserved after update")
+	}
+	if got.ExternalID == nil || *got.ExternalID != "ext-1" {
+		t.Fatal("provenance ExternalID not preserved after update")
+	}
 	nodes, _, _ := a.ListNodes(repo.ID, core.NodeListOptions{ListOptions: core.DefaultListOptions()})
 	if len(nodes) != 1 {
 		t.Fatalf("dedup failed: %d nodes", len(nodes))
@@ -157,5 +163,17 @@ func TestPipeline_SourceFilter_SkipsNonMatching(t *testing.T) {
 	}
 	if res.Created != 1 || res.Skipped != 1 {
 		t.Fatalf("filter not applied: %+v", res)
+	}
+}
+
+func TestPipeline_NilBatch(t *testing.T) {
+	p, a := setupPipeline(t)
+	repo := newTestRepo(t, a)
+	res, err := p.Ingest(IngestContext{RepoID: repo.ID, CreatedBy: repo.OwnerID}, nil)
+	if err != nil {
+		t.Fatalf("nil batch should not error: %v", err)
+	}
+	if res.Created != 0 || res.Updated != 0 || res.Skipped != 0 {
+		t.Fatalf("nil batch should produce zero result, got %+v", res)
 	}
 }

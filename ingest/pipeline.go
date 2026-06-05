@@ -46,7 +46,8 @@ func NewPipeline(archive core.Archive, pub app.Publisher) *Pipeline {
 
 // Ingest persists a batch's Items into ctx.RepoID. Items entering through a
 // Source are deduplicated by provenance (re-collection updates the existing
-// node) and filtered through the source's chain.
+// node) and filtered through the source's chain. On error mid-batch, the
+// returned IngestResult reflects operations completed before the failure.
 func (p *Pipeline) Ingest(ctx IngestContext, batch *core.IngestBatch) (IngestResult, error) {
 	var res IngestResult
 	if batch == nil {
@@ -54,7 +55,7 @@ func (p *Pipeline) Ingest(ctx IngestContext, batch *core.IngestBatch) (IngestRes
 	}
 
 	created := make([]*core.Node, 0, len(batch.Items))
-	var updated []*core.Node
+	updated := make([]*core.Node, 0, len(batch.Items))
 
 	for _, item := range batch.Items {
 		if item.Node == nil {
@@ -173,6 +174,14 @@ func (p *Pipeline) applySourceFilters(source *core.Source, node *core.Node) (boo
 	if len(source.FilterIDs) == 0 {
 		return true, nil
 	}
+
+	// An unset chain mode defaults to "all" (AND), matching filter.Evaluate's
+	// handling of an empty filter Mode.
+	mode := source.FilterChainMode
+	if mode == "" {
+		mode = core.FilterModeAll
+	}
+
 	payload := nodePayload(node)
 	anyMatched := false
 	for _, fid := range source.FilterIDs {
@@ -181,14 +190,14 @@ func (p *Pipeline) applySourceFilters(source *core.Source, node *core.Node) (boo
 			return false, fmt.Errorf("ingest: load source filter %s: %w", fid, err)
 		}
 		matched := filter.Evaluate(f, payload).Matches
-		if source.FilterChainMode == core.FilterModeAll && !matched {
+		if mode == core.FilterModeAll && !matched {
 			return false, nil
 		}
 		if matched {
 			anyMatched = true
 		}
 	}
-	if source.FilterChainMode == core.FilterModeAny {
+	if mode == core.FilterModeAny {
 		return anyMatched, nil
 	}
 	return true, nil
