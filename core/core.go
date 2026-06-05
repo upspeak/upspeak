@@ -23,10 +23,16 @@ type Node struct {
 	ContentType string          `json:"content_type"`
 	Body        json.RawMessage `json:"body"`
 	Metadata    []Metadata      `json:"metadata"`
-	CreatedBy   uuid.UUID       `json:"created_by"`
-	Version     int             `json:"version"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	// SourceID and ExternalID record ingestion provenance: which Source produced
+	// this node and its stable identifier in the external system. Both nil for
+	// manually-created nodes. Together they give idempotent re-collection,
+	// container grouping (all nodes from a room/category), and search attribution.
+	SourceID   *uuid.UUID `json:"source_id,omitempty"`
+	ExternalID *string    `json:"external_id,omitempty"`
+	CreatedBy  uuid.UUID  `json:"created_by"`
+	Version    int        `json:"version"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 // Edge represents a relationship between two nodes in a knowledge graph.

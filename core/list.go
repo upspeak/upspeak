@@ -98,6 +98,13 @@ type SinkListOptions struct {
 	ListOptions
 }
 
+// ConnectionListOptions filters connections in list operations.
+type ConnectionListOptions struct {
+	Connector ConnectorType
+	Status    ResourceStatus
+	ListOptions
+}
+
 // ScheduleListOptions filters schedules in list operations.
 type ScheduleListOptions struct {
 	RepoID     string // filter by repo ref in action; empty means all

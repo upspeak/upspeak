@@ -23,6 +23,7 @@ const (
 	PrefixSchedule   = "SCHED"
 	PrefixJob        = "JOB"
 	PrefixUser       = "USER"
+	PrefixConnection = "CONN"
 )
 
 // EntityPrefixToType maps short ID prefixes to entity type names.
@@ -39,6 +40,7 @@ var EntityPrefixToType = map[string]string{
 	PrefixSchedule:   "schedule",
 	PrefixJob:        "job",
 	PrefixUser:       "user",
+	PrefixConnection: "connection",
 }
 
 // slugRegex validates repository slugs: lowercase alphanumeric + hyphens, 1-32 chars.

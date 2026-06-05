@@ -67,6 +67,20 @@ const (
 	ConnectorWebpage   ConnectorType = "webpage"
 	ConnectorRepo      ConnectorType = "repo"
 	ConnectorUpspeak   ConnectorType = "upspeak"
+	ConnectorMastodon  ConnectorType = "mastodon"
+)
+
+// AuthType identifies how a Connection authenticates to its external system.
+// AuthToken denotes a long-lived bearer / personal-access token (e.g. a Matrix
+// access token), distinct from AuthAPIKey (a short key sent as a request header).
+type AuthType string
+
+// Auth type constants.
+const (
+	AuthNone   AuthType = "none"
+	AuthAPIKey AuthType = "api_key"
+	AuthToken  AuthType = "token"
+	AuthOAuth2 AuthType = "oauth2"
 )
 
 // JobType identifies the type of an async job.
@@ -165,6 +179,7 @@ const (
 	StatusPaused      ResourceStatus = "paused"
 	StatusError       ResourceStatus = "error"
 	StatusRateLimited ResourceStatus = "rate_limited"
+	StatusPendingAuth ResourceStatus = "pending_auth"
 )
 
 // JobStatus tracks the lifecycle of an async job.
