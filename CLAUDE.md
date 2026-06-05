@@ -134,6 +134,9 @@ All NATS code is isolated in the `nats/` package. Other modules interact via int
 // Fire-and-forget publishing (JetStream-backed, delivery confirmed).
 type Publisher interface {
     Publish(subject string, data []byte) error
+    // PublishEvent builds a core.Event envelope (NewEvent + Subject) and
+    // publishes it — modules never marshal events themselves.
+    PublishEvent(eventType core.EventType, repoID uuid.UUID, payload any) error
 }
 
 // Core NATS fan-out subscriptions (push-based).
@@ -149,7 +152,7 @@ type Consumer interface {
 
 **Publisher** uses `js.Publish()` (not `nc.Publish()`) so the server confirms persistence before returning. **Subscriber** uses core NATS for simple fan-out. **Consumer** wraps a JetStream durable pull subscription with `app.Msg` providing Ack/Nak/InProgress/Term methods.
 
-**Event subject format:** `repo.{repo_id}.events.{EventType}` (e.g., `repo.{uuid}.events.NodeCreated`)
+**Event subject format:** `repo.{repo_id}.events.{EventType}` (e.g., `repo.{uuid}.events.NodeCreated`). Subject construction lives in `core` — `Event.Subject()` for domain events, `core.JobSubject` / `core.ScheduleTriggerSubject` for the work-queue streams. Never hand-build subject strings.
 
 **JetStream streams:**
 - Events: `REPO_EVENTS` — Limits retention, captures `repo.*.events.>` for all repos. A single global stream (consistent with `JOBS`/`SCHEDULES`) lets one durable consumer serve every repo. Created in `main.go` via `CreateRepoEventsStream`.
@@ -183,6 +186,8 @@ YAML-based; see `upspeak.sample.yaml` for the full structure. First-time setup: 
 - **Files:** one file per concern; co-locate `*_test.go` with implementation; new modules go in the repo root.
 - **Naming:** PascalCase exported / camelCase private; constructors `New<Type>()`; single-letter receivers (`a *App`, `m *Module`); typed grouped constants (`EventType`, `JobStatus`).
 - **Errors:** custom domain error types (`ErrorNotFound`, `VersionConflictError`, `ErrorSlugRedirect`); wrap with `fmt.Errorf("context: %w", err)`; check immediately.
+- **Logging:** one `slog` handler is configured via `slog.SetDefault` in `main`; every package, module, and runner calls the package-level `slog.Info/Error/…` directly. Never construct a logger or hold a `*slog.Logger` field or parameter.
+- **Background runners:** the job/schedule/rules/realtime loops implement `app.Runner` (`Run(ctx)`) and are started uniformly from `main` via a `[]app.Runner`.
 
 ## Testing Standards
 
