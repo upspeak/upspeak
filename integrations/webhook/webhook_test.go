@@ -74,3 +74,18 @@ func TestAdapter_Contract(t *testing.T) {
 		t.Fatal("webhook must reject sink config (collect-only)")
 	}
 }
+
+func TestRedactURL(t *testing.T) {
+	cases := map[string]string{
+		"https://user:pass@example.com/services/T/B/SECRET?token=abc": "https://example.com",
+		"https://hooks.slack.com/services/T000/B000/XXXXXXXX":         "https://hooks.slack.com",
+		"http://localhost:8080/path?q=secret":                         "http://localhost:8080",
+		"not a url":                                                   "[redacted url]",
+		"":                                                            "[redacted url]",
+	}
+	for in, want := range cases {
+		if got := redactURL(in); got != want {
+			t.Errorf("redactURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

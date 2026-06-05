@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -309,7 +310,7 @@ func (r *Runner) executeWebhook(job *core.Job) (json.RawMessage, error) {
 		return nil, errors.New("url is required for webhook jobs")
 	}
 
-	slog.Info("Executing webhook job", "url", params.URL, "repo_id", job.RepoID)
+	slog.Info("Executing webhook job", "url", redactURL(params.URL), "repo_id", job.RepoID)
 
 	adapter, ok := r.registry.AdapterFor(core.ConnectorWebhook)
 	if !ok {
@@ -365,4 +366,16 @@ func (r *Runner) repoOwner(repoID uuid.UUID) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("resolve repo owner: %w", err)
 	}
 	return repo.OwnerID, nil
+}
+
+// redactURL returns a log-safe form of a URL (scheme://host only), so webhook
+// URLs carrying credentials in userinfo, path, or query are never logged.
+// Duplicated from integrations/webhook because jobs must not import the
+// integrations packages (import-cycle prevention).
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "[redacted url]"
+	}
+	return u.Scheme + "://" + u.Host
 }

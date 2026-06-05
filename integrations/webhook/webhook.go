@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/upspeak/upspeak/core"
@@ -77,15 +78,15 @@ func (a *Adapter) Collect(ctx context.Context, req core.CollectRequest) (*core.I
 	}
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", url, err)
+		return nil, fmt.Errorf("fetch %s: %w", redactURL(url), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("fetch %s: unexpected status %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("fetch %s: unexpected status %d", redactURL(url), resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("read body from %s: %w", url, err)
+		return nil, fmt.Errorf("read body from %s: %w", redactURL(url), err)
 	}
 	if contentType == "" {
 		contentType = resp.Header.Get("Content-Type")
@@ -113,6 +114,18 @@ func (a *Adapter) Collect(ctx context.Context, req core.CollectRequest) (*core.I
 		},
 	}
 	return &core.IngestBatch{Items: []core.IngestItem{item}}, nil
+}
+
+// redactURL returns a log-safe form of a URL, keeping only scheme and host so
+// credentials embedded in userinfo, the path (e.g. Slack/Discord webhook
+// tokens), or query parameters are never surfaced in error messages (which
+// persist into the job's stored error).
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "[redacted url]"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // Compile-time contract checks.
