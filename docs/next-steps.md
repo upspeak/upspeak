@@ -65,7 +65,7 @@ Each integration lives in `integrations/<name>/`, imports only `core`, and is wi
 | Sub-project | Status | Scope |
 |-------------|--------|-------|
 | A1 — Foundation | **Shipped** | `Connection` entity + store, `core.Adapter` contract, ingest types (`Item`, `Cursor`, `IngestCursor`), `GetNodeBySourceExternalID`, node provenance, `secrets.SecretCipher` port + AES-256-GCM implementation |
-| A2 — Registry + pipeline + webhook adapter | **Shipped** | `app.AdapterRegistry` lookup interface; `ingest.Registry` + Item-path `Pipeline` (map → filter → persist → dedup → events); `integrations/webhook` connection-less `Collector`; `jobs/runner.go` `executeWebhook` dispatches via registry+pipeline; runner gains DI of `app.Publisher` + `app.AdapterRegistry`, eliminating the `jobs ↔ connector` import cycle; webhook URLs redacted in logs and persisted error strings |
+| A2 — Registry + pipeline + webhook adapter | **Shipped** | `app.AdapterRegistry` lookup interface; `ingest.Registry` + Item-path `Pipeline` (map → filter → persist → dedup → events); `integrations/webhook` connection-less `Collector`; `jobs/runner.go` `executeWebhook` dispatches via registry+pipeline; runner gains DI of `app.Publisher` + `app.AdapterRegistry`, eliminating the `jobs ↔ connector` import cycle; webhook URLs redacted in logs, persisted error strings, and the job result |
 | A2b — repo→repo adapter | **Pending** | Net-new internal data movement; the adapter reads from a source repository's archive (a documented internal exception — adapters otherwise never touch the archive); must interact with `connector/cycle.go` to prevent self-loops; split out of A2 deliberately |
 | A3 — Cipher + connection enforcement | **Pending** | Wire `secrets.NewCipherFromEnv()` / `LocalArchive.SetSecretCipher` at runtime; enforce connector↔connection type match on source/sink create/update; return 409 when deleting an in-use connection; credential update is load-modify-save |
 | B — Full collect/publish wiring | **Pending** | Wire `executeCollect`/`executePublish` through registry+pipeline (cursors via `GetIngestCursor`/`SaveIngestCursor`, filter-on-normalised, dedup); emit `CollectionCompleted`/`PublishCompleted`; extend pipeline beyond Items: Threads (need thread provenance — not in the A1 schema), Annotations, Tombstones, reply Edges, author→User resolution (needs a user store) |
@@ -108,7 +108,7 @@ These unblock once the connector adapters (item 3) and sync (item 1) exist.
 Publish `EventCollectionCompleted` and `EventPublishCompleted` from job completion.
 They are declared in `core` but emitted nowhere, so rules and realtime clients cannot
 react to collection/publish outcomes yet. These are wired as part of Sub-project B
-above (see §4 watch-outs).
+above (see §2, Watch-outs for Sub-project B).
 
 ### 6. Endpoint gaps left stubbed by shipped phases
 
