@@ -48,11 +48,11 @@ func TestStart_EmbeddedPrivate(t *testing.T) {
 func TestPublisher_JetStream(t *testing.T) {
 	bus := setupTestBus(t)
 
-	// Create a stream to capture the test subject.
+	// Create the global REPO_EVENTS stream to capture the test subject.
 	repoID := uuid.New()
 	sm := NewStreamManager(bus)
-	if err := sm.CreateRepoStream(repoID); err != nil {
-		t.Fatalf("failed to create repo stream: %v", err)
+	if err := sm.CreateRepoEventsStream(); err != nil {
+		t.Fatalf("failed to create REPO_EVENTS stream: %v", err)
 	}
 
 	// Publish via the app.Publisher interface.
@@ -66,7 +66,7 @@ func TestPublisher_JetStream(t *testing.T) {
 
 	// Verify the message is in the stream by subscribing and fetching.
 	sub, err := bus.js.PullSubscribe(subject, "test-verify",
-		natsclient.BindStream(streamName(repoID)))
+		natsclient.BindStream(RepoEventsStreamName))
 	if err != nil {
 		t.Fatalf("failed to pull subscribe: %v", err)
 	}
@@ -83,37 +83,26 @@ func TestPublisher_JetStream(t *testing.T) {
 	}
 }
 
-func TestStreamManager_RepoStream(t *testing.T) {
+func TestStreamManager_RepoEventsStream(t *testing.T) {
 	bus := setupTestBus(t)
 	sm := NewStreamManager(bus)
-	repoID := uuid.New()
 
-	// Create.
-	if err := sm.CreateRepoStream(repoID); err != nil {
-		t.Fatalf("CreateRepoStream failed: %v", err)
+	if err := sm.CreateRepoEventsStream(); err != nil {
+		t.Fatalf("CreateRepoEventsStream failed: %v", err)
 	}
 
-	// Verify stream exists.
-	info, err := bus.js.StreamInfo(streamName(repoID))
+	info, err := bus.js.StreamInfo(RepoEventsStreamName)
 	if err != nil {
-		t.Fatalf("failed to get stream info: %v", err)
+		t.Fatalf("failed to get REPO_EVENTS stream info: %v", err)
 	}
-	if info.Config.Name != streamName(repoID) {
-		t.Errorf("expected stream name %s, got %s", streamName(repoID), info.Config.Name)
+	if info.Config.Name != RepoEventsStreamName {
+		t.Errorf("expected stream name %s, got %s", RepoEventsStreamName, info.Config.Name)
 	}
 	if info.Config.Retention != natsclient.LimitsPolicy {
-		t.Errorf("expected LimitsPolicy retention, got %v", info.Config.Retention)
+		t.Errorf("expected LimitsPolicy retention for fan-out, got %v", info.Config.Retention)
 	}
-
-	// Delete.
-	if err := sm.DeleteRepoStream(repoID); err != nil {
-		t.Fatalf("DeleteRepoStream failed: %v", err)
-	}
-
-	// Verify deleted.
-	_, err = bus.js.StreamInfo(streamName(repoID))
-	if err == nil {
-		t.Error("expected error after deleting stream, got nil")
+	if len(info.Config.Subjects) != 1 || info.Config.Subjects[0] != RepoEventsSubject {
+		t.Errorf("expected subjects [%s], got %v", RepoEventsSubject, info.Config.Subjects)
 	}
 }
 
