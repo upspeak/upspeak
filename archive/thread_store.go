@@ -338,6 +338,23 @@ func (a *LocalArchive) addNodeToThread(threadID, nodeID uuid.UUID, edgeType stri
 		return fmt.Errorf("failed to parse created_by: %w", err)
 	}
 
+	// Idempotency check: skip creation if a membership edge from the thread's
+	// root node to the target node already exists in thread_edges. This ensures
+	// that at-least-once NATS redelivery (MaxDeliver=5) does not produce
+	// duplicate membership edges. Dedup key is (thread, target node).
+	var existing int
+	err = a.db.QueryRow(`
+		SELECT COUNT(1) FROM thread_edges te
+		JOIN edges e ON te.edge_id = e.id
+		WHERE te.thread_id = ? AND e.source = ? AND e.target = ?
+	`, threadID.String(), rootNodeID.String(), nodeID.String()).Scan(&existing)
+	if err != nil {
+		return fmt.Errorf("failed to check existing thread membership: %w", err)
+	}
+	if existing > 0 {
+		return nil // membership already present — idempotent no-op
+	}
+
 	// Create edge from root node to target node.
 	edge := &core.Edge{
 		ID:        core.NewID(),

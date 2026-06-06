@@ -255,6 +255,48 @@ func TestAddNodeToThread(t *testing.T) {
 	}
 }
 
+func TestAddNodeToThread_Idempotent(t *testing.T) {
+	a := setupTestArchive(t)
+	repo := createTestRepo(t, a)
+
+	thread := makeThread(repo, "Thread for Idempotency")
+	if err := a.SaveThread(thread); err != nil {
+		t.Fatalf("SaveThread failed: %v", err)
+	}
+
+	// Create a separate node that will be added to the thread.
+	memberNode := makeNode(repo, "note", "Member Node")
+	if err := a.SaveNode(memberNode); err != nil {
+		t.Fatalf("SaveNode failed: %v", err)
+	}
+
+	// First call — should succeed and create the membership edge.
+	if err := a.AddNodeToThread(thread.ID, memberNode.ID, "contains"); err != nil {
+		t.Fatalf("AddNodeToThread (first call) failed: %v", err)
+	}
+
+	// Second call — must be a no-op, not an error.
+	if err := a.AddNodeToThread(thread.ID, memberNode.ID, "contains"); err != nil {
+		t.Fatalf("AddNodeToThread (second call) returned unexpected error: %v", err)
+	}
+
+	// The node must appear exactly once in the thread's edges.
+	got, err := a.GetThread(thread.ID)
+	if err != nil {
+		t.Fatalf("GetThread failed: %v", err)
+	}
+
+	count := 0
+	for _, e := range got.Edges {
+		if e.Target == memberNode.ID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Expected exactly 1 membership edge for member node, got %d", count)
+	}
+}
+
 func TestRemoveNodeFromThread(t *testing.T) {
 	a := setupTestArchive(t)
 	repo := createTestRepo(t, a)
