@@ -287,6 +287,33 @@ func parseSourceFields(source *core.Source, idStr, repoIDStr, createdByStr strin
 	return source, nil
 }
 
+// listRepoSourcesForSink returns all repo-connector Sources (across all
+// repositories) whose config["sink_id"] matches the given sinkID. Because
+// SQLite's JSON support is not guaranteed in all build configurations, the
+// filtering is performed in Go after fetching all ConnectorRepo sources.
+func (a *LocalArchive) listRepoSourcesForSink(sinkID uuid.UUID) ([]core.Source, error) {
+	rows, err := a.db.Query(`
+		SELECT id, short_id, repo_id, connection_id, name, connector, config, filter_ids, filter_chain_mode, rate_limit, status, created_by, version, created_at, updated_at
+		FROM sources WHERE connector = ?`, string(core.ConnectorRepo))
+	if err != nil {
+		return nil, fmt.Errorf("query repo sources: %w", err)
+	}
+	defer rows.Close()
+
+	sinkIDStr := sinkID.String()
+	var out []core.Source
+	for rows.Next() {
+		s, err := scanSourceFromRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		if ref, _ := s.Config["sink_id"].(string); ref == sinkIDStr {
+			out = append(out, *s)
+		}
+	}
+	return out, rows.Err()
+}
+
 // stringOrNil converts a byte slice to a string pointer (nil if empty).
 func stringOrNil(b []byte) *string {
 	if len(b) == 0 {

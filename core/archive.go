@@ -102,6 +102,10 @@ type SourceStore interface {
 	GetSource(sourceID uuid.UUID) (*Source, error)
 	DeleteSource(sourceID uuid.UUID) error
 	ListSources(repoID uuid.UUID, opts SourceListOptions) ([]Source, int, error)
+	// ListRepoSourcesForSink returns every repo-connector Source (across all
+	// repositories) whose config references the given upstream Sink id. Used by
+	// the ingest supervisor to fan a sink event out to its subscribers.
+	ListRepoSourcesForSink(sinkID uuid.UUID) ([]Source, error)
 }
 
 // SinkStore handles sink persistence.

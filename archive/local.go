@@ -351,6 +351,12 @@ func (a *LocalArchive) ListSources(repoID uuid.UUID, opts core.SourceListOptions
 	return a.listSources(repoID, opts)
 }
 
+// ListRepoSourcesForSink returns every repo-connector Source (across all
+// repositories) whose config references the given upstream Sink id.
+func (a *LocalArchive) ListRepoSourcesForSink(sinkID uuid.UUID) ([]core.Source, error) {
+	return a.listRepoSourcesForSink(sinkID)
+}
+
 // --- core.SinkStore implementation ---
 
 func (a *LocalArchive) SaveSink(sink *core.Sink) error {
