@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxEventHops is the maximum number of reaction hops an event may carry before
+// consumers drop it. It bounds both rule-engine action cascades and repo→repo
+// ingest chains: any consumer that emits a downstream event increments Hops by
+// one, and any consumer that receives an event with Hops >= MaxEventHops must
+// discard it without processing.
+const MaxEventHops = 5
+
 // Event represents a domain event published to JetStream.
 type Event struct {
 	ID        uuid.UUID       `json:"id"`
@@ -15,10 +22,10 @@ type Event struct {
 	RepoID    uuid.UUID       `json:"repo_id"`
 	Payload   json.RawMessage `json:"payload"`
 	Timestamp time.Time       `json:"timestamp"`
-	// Hops counts how many rule-engine reaction steps produced this event. The
-	// originating (user-initiated) event has Hops 0; an event emitted as a
-	// consequence of a rule firing carries Hops+1. The rules engine refuses to
-	// act on events beyond a maximum hop count, bounding action cascades.
+	// Hops counts how many reaction steps produced this event. The originating
+	// (user-initiated) event has Hops 0; an event emitted as a consequence of a
+	// rule firing or repo→repo ingest carries Hops+1. Consumers drop events at
+	// MaxEventHops, bounding action cascades.
 	Hops int `json:"hops,omitempty"`
 }
 

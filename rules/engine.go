@@ -14,11 +14,6 @@ import (
 	"github.com/upspeak/upspeak/jobs"
 )
 
-// maxRuleHops bounds how many chained rule-engine reactions a single originating
-// event may spawn. An event whose Hops count reaches this limit is dropped
-// without evaluation, breaking action cascades that would otherwise loop.
-const maxRuleHops = 5
-
 // fetchBatchSize and fetchTimeout control the durable consumer fetch loop.
 const (
 	fetchBatchSize = 10
@@ -110,8 +105,8 @@ func (e *Engine) dispatch(data []byte) ackDecision {
 	if isMetaEvent(evt.Type) {
 		return ackOK
 	}
-	if evt.Hops >= maxRuleHops {
-		slog.Warn("Dropping event exceeding max rule hops", "event", evt.Type, "hops", evt.Hops)
+	if evt.Hops >= core.MaxEventHops {
+		slog.Warn("Dropping event exceeding max hops", "event", evt.Type, "hops", evt.Hops)
 		return ackOK
 	}
 
@@ -293,7 +288,7 @@ func (e *Engine) publishTriggered(rule *core.Rule, evt *core.Event, exec *core.R
 		slog.Error("Failed to create RuleTriggered event", "error", err)
 		return
 	}
-	// Propagate the hop count so any reaction chain is bounded by maxRuleHops.
+	// Propagate the hop count so any reaction chain is bounded by core.MaxEventHops.
 	outEvt.Hops = evt.Hops + 1
 	out, err := json.Marshal(outEvt)
 	if err != nil {

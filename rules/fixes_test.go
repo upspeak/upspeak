@@ -127,7 +127,7 @@ func TestEngine_HopCapDropsDeepEvents(t *testing.T) {
 		Type:    core.EventNodeCreated,
 		RepoID:  repo.ID,
 		Payload: json.RawMessage(`{"node":{"type":"article"}}`),
-		Hops:    maxRuleHops,
+		Hops:    core.MaxEventHops,
 	}
 	data, err := json.Marshal(evt)
 	if err != nil {
