@@ -162,6 +162,10 @@ func main() {
 		slog.Error("Error creating REPO_EVENTS stream", "error", err)
 		os.Exit(1)
 	}
+	if err := sm.CreateSinkEventsStream(); err != nil {
+		slog.Error("Error creating SINK_EVENTS stream", "error", err)
+		os.Exit(1)
+	}
 	cm := usnats.NewConsumerManager(bus)
 	if err := cm.CreateJobRunnerConsumer(); err != nil {
 		slog.Error("Error creating job-runner consumer", "error", err)
@@ -173,6 +177,14 @@ func main() {
 	}
 	if err := cm.CreateRulesEngineConsumer(); err != nil {
 		slog.Error("Error creating rules-engine consumer", "error", err)
+		os.Exit(1)
+	}
+	if err := cm.CreateSinkPublisherConsumer(); err != nil {
+		slog.Error("Error creating sink-publisher consumer", "error", err)
+		os.Exit(1)
+	}
+	if err := cm.CreateRepoIngestConsumer(); err != nil {
+		slog.Error("Error creating repo-ingest consumer", "error", err)
 		os.Exit(1)
 	}
 
@@ -201,6 +213,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Repo→repo connector: the publish supervisor consumes REPO_EVENTS and
+	// republishes the curated subset to SINK_EVENTS; the ingest supervisor
+	// consumes SINK_EVENTS and fans each event into subscribing repos' pipelines.
+	sinkPubConsumer, err := usnats.NewConsumer(bus, usnats.RepoEventsSubject, usnats.ConsumerSinkPublisher)
+	if err != nil {
+		slog.Error("Error creating sink-publisher consumer subscription", "error", err)
+		os.Exit(1)
+	}
+	repoIngestConsumer, err := usnats.NewConsumer(bus, usnats.SinkEventsSubject, usnats.ConsumerRepoIngest)
+	if err != nil {
+		slog.Error("Error creating repo-ingest consumer subscription", "error", err)
+		os.Exit(1)
+	}
+
 	// Build the adapter registry from the compiled-in integrations. main.go is
 	// the only place that knows the concrete adapters; jobs/connector consume
 	// the app.AdapterRegistry interface, so no import cycle forms.
@@ -215,6 +241,8 @@ func main() {
 		jobs.NewRunner(a, jobConsumer, bus.Publisher(), adapterRegistry),
 		scheduler.NewRunner(a, bus.Publisher(), scheduleConsumer),
 		rules.NewEngine(a, bus.Publisher(), rulesConsumer),
+		connector.NewPublishSupervisor(a, bus.Publisher(), sinkPubConsumer),
+		ingest.NewSupervisor(a, bus.Publisher(), repoIngestConsumer),
 		realtimeModule,
 	}
 	for _, r := range runners {
