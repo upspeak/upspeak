@@ -484,6 +484,28 @@ func TestIngestItemAttachesToThread(t *testing.T) {
 	}
 }
 
+func TestIngestDefersItemWithMissingThread(t *testing.T) {
+	p, a := setupPipeline(t)
+	repo := newTestRepo(t, a)
+	src := newTestSource(t, a, repo)
+	ctx := IngestContext{RepoID: repo.ID, Source: src, CreatedBy: repo.OwnerID}
+
+	// Item references a thread that has not been ingested.
+	item := nodeItem("msg-orphan", "reply without a thread")
+	item.ThreadExternalID = "topic-absent"
+	res, err := p.Ingest(ctx, &core.IngestBatch{Items: []core.IngestItem{item}})
+	if err != nil {
+		t.Fatalf("ingest item: %v", err)
+	}
+	// The node itself persists; only the attachment is deferred (retryable).
+	if res.Created != 1 || res.Deferred != 1 || res.Skipped != 0 {
+		t.Fatalf("expected node created and attachment deferred, got %+v", res)
+	}
+	if _, err := a.GetNodeBySourceExternalID(src.ID, "msg-orphan"); err != nil {
+		t.Fatalf("node should persist even when thread attachment is deferred: %v", err)
+	}
+}
+
 func TestIngestAnnotation(t *testing.T) {
 	p, a := setupPipeline(t)
 	repo := newTestRepo(t, a)

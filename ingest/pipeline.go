@@ -105,7 +105,9 @@ func (p *Pipeline) Ingest(ctx IngestContext, batch *core.IngestBatch) (IngestRes
 			}
 		}
 
-		if item.ThreadExternalID != "" {
+		// Thread attachment requires provenance to resolve the thread; ad-hoc
+		// items (no Source) cannot attach, so skip rather than falsely defer.
+		if item.ThreadExternalID != "" && ctx.Source != nil {
 			attachments = append(attachments, attachment{item: item, node: node})
 		}
 
