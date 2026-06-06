@@ -16,6 +16,10 @@ type Config struct {
 	Embedded bool   `mapstructure:"embedded"`
 	Private  bool   `mapstructure:"private"`
 	Logging  bool   `mapstructure:"logging"`
+	// StoreDir overrides the JetStream storage directory. When empty, the
+	// NATS server default is used. Set to a temporary directory in tests to
+	// avoid cross-test state via the shared on-disk JetStream store.
+	StoreDir string `mapstructure:"store_dir"`
 }
 
 // Bus manages the NATS connection, optional embedded server, and JetStream context.
@@ -146,6 +150,7 @@ func startEmbeddedServer(appName string, config Config) (*server.Server, error) 
 		DontListen:      config.Private,
 		JetStream:       true,
 		JetStreamDomain: appName,
+		StoreDir:        config.StoreDir,
 	}
 
 	ns, err := server.NewServer(opts)

@@ -11,13 +11,15 @@ import (
 )
 
 // setupTestBus creates an embedded NATS Bus for testing with a private
-// in-process server. The bus is stopped when the test completes.
+// in-process server and an isolated temporary JetStream store directory.
+// The bus is stopped when the test completes.
 func setupTestBus(t *testing.T) *Bus {
 	t.Helper()
 	bus, err := Start("test", Config{
 		Embedded: true,
 		Private:  true,
 		Logging:  false,
+		StoreDir: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("failed to start test bus: %v", err)
@@ -217,6 +219,87 @@ func TestConsumer_FetchAndAck(t *testing.T) {
 	_, err = c.Fetch(1, 500*time.Millisecond)
 	if !errors.Is(err, app.ErrFetchTimeout) {
 		t.Errorf("expected app.ErrFetchTimeout, got %v", err)
+	}
+}
+
+func TestStreamManager_SinkEventsStream(t *testing.T) {
+	bus := setupTestBus(t)
+	sm := NewStreamManager(bus)
+
+	if err := sm.CreateSinkEventsStream(); err != nil {
+		t.Fatalf("CreateSinkEventsStream failed: %v", err)
+	}
+
+	info, err := bus.js.StreamInfo(SinkEventsStreamName)
+	if err != nil {
+		t.Fatalf("failed to get SINK_EVENTS stream info: %v", err)
+	}
+	if info.Config.Name != SinkEventsStreamName {
+		t.Errorf("expected stream name %s, got %s", SinkEventsStreamName, info.Config.Name)
+	}
+	if info.Config.Retention != natsclient.LimitsPolicy {
+		t.Errorf("expected LimitsPolicy retention for fan-out, got %v", info.Config.Retention)
+	}
+	if len(info.Config.Subjects) != 1 || info.Config.Subjects[0] != SinkEventsSubject {
+		t.Errorf("expected subjects [%s], got %v", SinkEventsSubject, info.Config.Subjects)
+	}
+}
+
+func TestConsumerManager_SinkPublisherConsumer(t *testing.T) {
+	bus := setupTestBus(t)
+	sm := NewStreamManager(bus)
+	cm := NewConsumerManager(bus)
+
+	// REPO_EVENTS stream must exist first.
+	if err := sm.CreateRepoEventsStream(); err != nil {
+		t.Fatalf("CreateRepoEventsStream failed: %v", err)
+	}
+
+	if err := cm.CreateSinkPublisherConsumer(); err != nil {
+		t.Fatalf("CreateSinkPublisherConsumer failed: %v", err)
+	}
+
+	info, err := bus.js.ConsumerInfo(RepoEventsStreamName, ConsumerSinkPublisher)
+	if err != nil {
+		t.Fatalf("failed to get consumer info: %v", err)
+	}
+	if info.Config.Durable != ConsumerSinkPublisher {
+		t.Errorf("expected durable %s, got %s", ConsumerSinkPublisher, info.Config.Durable)
+	}
+	if info.Config.AckPolicy != natsclient.AckExplicitPolicy {
+		t.Errorf("expected AckExplicit, got %v", info.Config.AckPolicy)
+	}
+	if info.Config.MaxDeliver != 5 {
+		t.Errorf("expected MaxDeliver 5, got %d", info.Config.MaxDeliver)
+	}
+}
+
+func TestConsumerManager_RepoIngestConsumer(t *testing.T) {
+	bus := setupTestBus(t)
+	sm := NewStreamManager(bus)
+	cm := NewConsumerManager(bus)
+
+	// SINK_EVENTS stream must exist first.
+	if err := sm.CreateSinkEventsStream(); err != nil {
+		t.Fatalf("CreateSinkEventsStream failed: %v", err)
+	}
+
+	if err := cm.CreateRepoIngestConsumer(); err != nil {
+		t.Fatalf("CreateRepoIngestConsumer failed: %v", err)
+	}
+
+	info, err := bus.js.ConsumerInfo(SinkEventsStreamName, ConsumerRepoIngest)
+	if err != nil {
+		t.Fatalf("failed to get consumer info: %v", err)
+	}
+	if info.Config.Durable != ConsumerRepoIngest {
+		t.Errorf("expected durable %s, got %s", ConsumerRepoIngest, info.Config.Durable)
+	}
+	if info.Config.AckPolicy != natsclient.AckExplicitPolicy {
+		t.Errorf("expected AckExplicit, got %v", info.Config.AckPolicy)
+	}
+	if info.Config.MaxDeliver != 5 {
+		t.Errorf("expected MaxDeliver 5, got %d", info.Config.MaxDeliver)
 	}
 }
 

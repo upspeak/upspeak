@@ -51,6 +51,8 @@ const (
 	ConsumerJobRunner      = "job-runner"
 	ConsumerScheduleRunner = "schedule-runner"
 	ConsumerRulesEngine    = "rules-engine"
+	ConsumerSinkPublisher  = "sink-publisher" // on REPO_EVENTS
+	ConsumerRepoIngest     = "repo-ingest"    // on SINK_EVENTS
 )
 
 // CreateJobRunnerConsumer creates the durable pull consumer for async job
@@ -89,6 +91,32 @@ func (cm *ConsumerManager) CreateScheduleRunnerConsumer() error {
 	return cm.CreateConsumer(SchedulesStreamName, &nats.ConsumerConfig{
 		Durable:       ConsumerScheduleRunner,
 		FilterSubject: "schedules.trigger.>",
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverAllPolicy,
+		MaxDeliver:    5,
+		AckWait:       30 * time.Second,
+	})
+}
+
+// CreateSinkPublisherConsumer creates the durable consumer the publish
+// supervisor uses to read every repository's domain events from REPO_EVENTS.
+func (cm *ConsumerManager) CreateSinkPublisherConsumer() error {
+	return cm.CreateConsumer(RepoEventsStreamName, &nats.ConsumerConfig{
+		Durable:       ConsumerSinkPublisher,
+		FilterSubject: RepoEventsSubject,
+		AckPolicy:     nats.AckExplicitPolicy,
+		DeliverPolicy: nats.DeliverAllPolicy,
+		MaxDeliver:    5,
+		AckWait:       30 * time.Second,
+	})
+}
+
+// CreateRepoIngestConsumer creates the durable consumer the ingest supervisor
+// uses to read curated Sink events from SINK_EVENTS.
+func (cm *ConsumerManager) CreateRepoIngestConsumer() error {
+	return cm.CreateConsumer(SinkEventsStreamName, &nats.ConsumerConfig{
+		Durable:       ConsumerRepoIngest,
+		FilterSubject: SinkEventsSubject,
 		AckPolicy:     nats.AckExplicitPolicy,
 		DeliverPolicy: nats.DeliverAllPolicy,
 		MaxDeliver:    5,

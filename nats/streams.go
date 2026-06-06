@@ -75,6 +75,29 @@ func (sm *StreamManager) CreateRepoEventsStream() error {
 	return nil
 }
 
+// SinkEventsStreamName is the name of the global curated-outbound stream.
+const SinkEventsStreamName = "SINK_EVENTS"
+
+// SinkEventsSubject captures every Sink's curated outbound events.
+const SinkEventsSubject = "sink.*.events.>"
+
+// CreateSinkEventsStream creates the global stream that captures every Sink's
+// curated outbound events (sink.*.events.>) with Limits retention. Limits (not
+// WorkQueue) because many Sources may subscribe to one Sink — the stream is
+// fan-out, like REPO_EVENTS.
+func (sm *StreamManager) CreateSinkEventsStream() error {
+	_, err := sm.js.AddStream(&nats.StreamConfig{
+		Name:      SinkEventsStreamName,
+		Subjects:  []string{SinkEventsSubject},
+		Retention: nats.LimitsPolicy,
+		Storage:   nats.FileStorage,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create SINK_EVENTS stream: %w", err)
+	}
+	return nil
+}
+
 // JobsStreamName is the name of the global JOBS stream.
 const JobsStreamName = "JOBS"
 
