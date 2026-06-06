@@ -85,6 +85,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if !config.NATS.Logging {
 		t.Error("Expected default NATS.Logging to be true")
 	}
+	if config.NATS.StoreDir != "./.upspeak/data/jetstream" {
+		t.Errorf("Expected default NATS.StoreDir to be './.upspeak/data/jetstream', got '%s'", config.NATS.StoreDir)
+	}
 	if config.HTTP.Port != 8080 {
 		t.Errorf("Expected default HTTP.Port to be 8080, got %d", config.HTTP.Port)
 	}

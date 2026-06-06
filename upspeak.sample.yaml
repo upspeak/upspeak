@@ -3,6 +3,9 @@ nats:
   embedded: true
   private: false
   logging: false
+  # JetStream on-disk store for the embedded server. Defaults to
+  # ./.upspeak/data/jetstream if unset. Applies only when embedded: true.
+  store_dir: ./.upspeak/data/jetstream
 http:
   port: 8080
 modules:

@@ -10,6 +10,9 @@ import (
 // the nats-io package outside the nats/ package, preserving NATS isolation.
 const defaultNATSURL = "nats://127.0.0.1:4222"
 
+// defaultNATSStoreDir is the default embedded-server JetStream storage path.
+const defaultNATSStoreDir = "./.upspeak/data/jetstream"
+
 // Config defines the application configuration.
 type Config struct {
 	// Name of the application. Use only lowercase letters, dashes and underscores. No spaces.
@@ -30,6 +33,11 @@ type NATSConfig struct {
 	Private bool `mapstructure:"private"`
 	// Should the NATS server logs get printed?
 	Logging bool `mapstructure:"logging"`
+	// StoreDir is the JetStream on-disk storage directory for the embedded
+	// server. Applicable only if Embedded is true. Defaults to
+	// ./.upspeak/data/jetstream when unset, so JetStream state survives
+	// restarts (the NATS server default is a non-durable temp directory).
+	StoreDir string `mapstructure:"store_dir"`
 }
 
 // HTTPConfig holds HTTP-specific configuration
@@ -53,6 +61,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	v.SetDefault("nats.private", false)
 	v.SetDefault("nats.logging", true)
 	v.SetDefault("nats.url", defaultNATSURL)
+	v.SetDefault("nats.store_dir", defaultNATSStoreDir)
 	v.SetDefault("http.port", 8080)
 
 	// Configuration file settings

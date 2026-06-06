@@ -39,6 +39,7 @@ func main() {
 		Embedded: config.NATS.Embedded,
 		Private:  config.NATS.Private,
 		Logging:  config.NATS.Logging,
+		StoreDir: config.NATS.StoreDir,
 	}
 	bus, err := usnats.Start(config.Name, natsConfig)
 	if err != nil {
