@@ -3,6 +3,7 @@ package connector
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -14,11 +15,11 @@ import (
 
 // createSourceRequest is the JSON body for creating a source.
 type createSourceRequest struct {
-	Name            string         `json:"name"`
-	Connector       string         `json:"connector"`
-	Config          map[string]any `json:"config"`
-	FilterIDs       []uuid.UUID    `json:"filter_ids,omitempty"`
-	FilterChainMode string         `json:"filter_chain_mode,omitempty"`
+	Name            string          `json:"name"`
+	Connector       string          `json:"connector"`
+	Config          map[string]any  `json:"config"`
+	FilterIDs       []uuid.UUID     `json:"filter_ids,omitempty"`
+	FilterChainMode string          `json:"filter_chain_mode,omitempty"`
 	RateLimit       *core.RateLimit `json:"rate_limit,omitempty"`
 }
 
@@ -58,15 +59,16 @@ func (m *Module) createSourceHandler() http.HandlerFunc {
 			return
 		}
 
-		if err := m.validateSourceConfig(connectorType, req.Config); err != nil {
+		sink, err := m.validateSourceConfig(connectorType, req.Config)
+		if err != nil {
 			api.WriteError(w, http.StatusBadRequest, "invalid_config", err.Error())
 			return
 		}
 
-		// Cycle detection for repo connectors.
+		// Cycle detection for repo connectors. The Source subscribes to the Sink
+		// named by config.sink_id; that Sink's repo is the cycle-detection target.
 		if connectorType == core.ConnectorRepo {
-			targetRepoID, _ := uuid.Parse(req.Config["repo_id"].(string))
-			hasCycle, err := m.detectCycle(repo.ID, targetRepoID)
+			hasCycle, err := m.detectCycle(repo.ID, sink.RepoID)
 			if err != nil {
 				api.WriteError(w, http.StatusInternalServerError, "cycle_check_failed", "Failed to check for cycles")
 				return
@@ -190,26 +192,22 @@ func (m *Module) updateSourceHandler() http.HandlerFunc {
 			source.Name = *req.Name
 		}
 		if req.Config != nil {
-			// Validate config if connector type requires it.
-			if err := m.validateSourceConfig(source.Connector, req.Config); err != nil {
+			// Validate config if the connector type requires it; for repo connectors
+			// this also resolves the subscribed Sink for cycle detection.
+			sink, err := m.validateSourceConfig(source.Connector, req.Config)
+			if err != nil {
 				api.WriteError(w, http.StatusBadRequest, "invalid_config", err.Error())
 				return
 			}
-			// Cycle detection for repo connector config changes.
 			if source.Connector == core.ConnectorRepo {
-				if repoIDStr, ok := req.Config["repo_id"].(string); ok {
-					targetRepoID, parseErr := uuid.Parse(repoIDStr)
-					if parseErr == nil {
-						hasCycle, cycleErr := m.detectCycle(repo.ID, targetRepoID)
-						if cycleErr != nil {
-							api.WriteError(w, http.StatusInternalServerError, "cycle_check_failed", "Failed to check for cycles")
-							return
-						}
-						if hasCycle {
-							api.WriteError(w, http.StatusConflict, "cycle_detected", "Updating this source would form a circular reference")
-							return
-						}
-					}
+				hasCycle, cycleErr := m.detectCycle(repo.ID, sink.RepoID)
+				if cycleErr != nil {
+					api.WriteError(w, http.StatusInternalServerError, "cycle_check_failed", "Failed to check for cycles")
+					return
+				}
+				if hasCycle {
+					api.WriteError(w, http.StatusConflict, "cycle_detected", "Updating this source would form a circular reference")
+					return
 				}
 			}
 			source.Config = req.Config
@@ -320,21 +318,31 @@ func (m *Module) sourceHistoryHandler() http.HandlerFunc {
 	}
 }
 
-// validateSourceConfig validates connector-specific configuration.
-func (m *Module) validateSourceConfig(connectorType core.ConnectorType, config map[string]any) error {
+// validateSourceConfig validates connector-specific configuration and, for repo
+// connectors, returns the resolved Sink the Source subscribes to — config.sink_id
+// is the UUID of a Sink that lives in another repository and must resolve to an
+// existing Sink. Returning the Sink lets the caller reuse it for cycle detection
+// without a second lookup. For non-repo connectors the returned Sink is nil.
+func (m *Module) validateSourceConfig(connectorType core.ConnectorType, config map[string]any) (*core.Sink, error) {
 	switch connectorType {
 	case core.ConnectorRepo:
-		repoIDStr, ok := config["repo_id"].(string)
-		if !ok || repoIDStr == "" {
-			return errors.New("config.repo_id is required for repo connector")
+		ref, ok := config["sink_id"].(string)
+		if !ok || ref == "" {
+			return nil, errors.New("config.sink_id is required for repo connector")
 		}
-		if _, err := uuid.Parse(repoIDStr); err != nil {
-			return errors.New("config.repo_id must be a valid UUID")
+		sinkID, err := uuid.Parse(ref)
+		if err != nil {
+			return nil, errors.New("config.sink_id must be a valid UUID")
 		}
+		sink, err := m.archive.GetSink(sinkID)
+		if err != nil {
+			return nil, fmt.Errorf("config.sink_id does not resolve to a sink: %w", err)
+		}
+		return sink, nil
 	case core.ConnectorWebhook:
 		// Webhook sources require no special config validation.
 	}
-	return nil
+	return nil, nil
 }
 
 // isSupportedConnector returns true if the connector type is supported in Phase 4.

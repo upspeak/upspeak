@@ -63,19 +63,9 @@ func (m *Module) createSinkHandler() http.HandlerFunc {
 			return
 		}
 
-		// Cycle detection for repo connectors.
-		if connectorType == core.ConnectorRepo {
-			targetRepoID, _ := uuid.Parse(req.Config["repo_id"].(string))
-			hasCycle, err := m.detectCycle(repo.ID, targetRepoID)
-			if err != nil {
-				api.WriteError(w, http.StatusInternalServerError, "cycle_check_failed", "Failed to check for cycles")
-				return
-			}
-			if hasCycle {
-				api.WriteError(w, http.StatusConflict, "cycle_detected", "Creating this sink would form a circular reference")
-				return
-			}
-		}
+		// Repo Sinks are target-agnostic curated publication endpoints — they
+		// reference no other repository, so they cannot form a connector cycle.
+		// Cycle detection runs on repo Sources (which reference a sink_id) instead.
 
 		filterChainMode := core.FilterModeAll
 		if req.FilterChainMode == string(core.FilterModeAny) {
@@ -194,23 +184,8 @@ func (m *Module) updateSinkHandler() http.HandlerFunc {
 				api.WriteError(w, http.StatusBadRequest, "invalid_config", err.Error())
 				return
 			}
-			// Cycle detection for repo connector config changes.
-			if sink.Connector == core.ConnectorRepo {
-				if repoIDStr, ok := req.Config["repo_id"].(string); ok {
-					targetRepoID, parseErr := uuid.Parse(repoIDStr)
-					if parseErr == nil {
-						hasCycle, cycleErr := m.detectCycle(repo.ID, targetRepoID)
-						if cycleErr != nil {
-							api.WriteError(w, http.StatusInternalServerError, "cycle_check_failed", "Failed to check for cycles")
-							return
-						}
-						if hasCycle {
-							api.WriteError(w, http.StatusConflict, "cycle_detected", "Updating this sink would form a circular reference")
-							return
-						}
-					}
-				}
-			}
+			// Repo Sinks are target-agnostic, so a config change cannot introduce a
+			// connector cycle — no cycle detection is needed on the sink side.
 			sink.Config = req.Config
 		}
 		if req.FilterIDs != nil {
@@ -319,17 +294,14 @@ func (m *Module) sinkHistoryHandler() http.HandlerFunc {
 	}
 }
 
-// validateSinkConfig validates connector-specific configuration for sinks.
+// validateSinkConfig validates connector-specific configuration for sinks. Repo
+// Sinks are target-agnostic curated publication endpoints: their curation is
+// their FilterIDs, so they require no target config. Webhook sinks likewise need
+// no special validation here.
 func (m *Module) validateSinkConfig(connectorType core.ConnectorType, config map[string]any) error {
 	switch connectorType {
 	case core.ConnectorRepo:
-		repoIDStr, ok := config["repo_id"].(string)
-		if !ok || repoIDStr == "" {
-			return errors.New("config.repo_id is required for repo connector")
-		}
-		if _, err := uuid.Parse(repoIDStr); err != nil {
-			return errors.New("config.repo_id must be a valid UUID")
-		}
+		// No required config — a repo Sink references no other repository.
 	case core.ConnectorWebhook:
 		// Webhook sinks require no special config validation.
 	}

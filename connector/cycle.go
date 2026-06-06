@@ -6,9 +6,9 @@ import (
 	"github.com/upspeak/upspeak/core"
 )
 
-// detectCycle performs a BFS from targetRepoID through repo-type sources and
-// sinks to determine if adding a connection from startRepoID to targetRepoID
-// would create a circular reference. Returns true if a cycle would be formed.
+// detectCycle performs a BFS from targetRepoID through repo-type Sources to
+// determine if adding a connection from startRepoID to targetRepoID would create
+// a circular reference. Returns true if a cycle would be formed.
 func (m *Module) detectCycle(startRepoID, targetRepoID uuid.UUID) (bool, error) {
 	if startRepoID == targetRepoID {
 		return true, nil
@@ -39,12 +39,14 @@ func (m *Module) detectCycle(startRepoID, targetRepoID uuid.UUID) (bool, error) 
 	return false, nil
 }
 
-// repoConnectorTargets returns all repo IDs referenced by repo-type sources
-// and sinks in the given repository.
+// repoConnectorTargets returns the repo IDs that repo-type Sources in the given
+// repository subscribe to, resolved via each Source's referenced Sink. A repo
+// Source declares config.sink_id (a Sink in another repository); data flows from
+// that Sink's repository into this one, so the Sink's owner repo is the connector
+// target. Sinks themselves are target-agnostic and contribute no edges.
 func (m *Module) repoConnectorTargets(repoID uuid.UUID) ([]uuid.UUID, error) {
-	var targets []uuid.UUID
-
-	// Check sources. Use a high limit to ensure all repo-type connectors are found.
+	// High limit so cycle detection sees every repo-type Source; a repository with
+	// thousands of repo Sources is pathological.
 	sources, _, err := m.archive.ListSources(repoID, core.SourceListOptions{
 		Connector:   core.ConnectorRepo,
 		ListOptions: core.ListOptions{Limit: 1000, SortBy: "created_at", Order: "desc"},
@@ -52,38 +54,20 @@ func (m *Module) repoConnectorTargets(repoID uuid.UUID) ([]uuid.UUID, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, src := range sources {
-		if rid := extractRepoID(src.Config); rid != uuid.Nil {
-			targets = append(targets, rid)
-		}
-	}
 
-	// Check sinks.
-	sinks, _, err := m.archive.ListSinks(repoID, core.SinkListOptions{
-		Connector:   core.ConnectorRepo,
-		ListOptions: core.ListOptions{Limit: 1000, SortBy: "created_at", Order: "desc"},
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, sink := range sinks {
-		if rid := extractRepoID(sink.Config); rid != uuid.Nil {
-			targets = append(targets, rid)
+	var targets []uuid.UUID
+	for _, src := range sources {
+		ref, _ := src.Config["sink_id"].(string)
+		sinkID, err := uuid.Parse(ref)
+		if err != nil {
+			continue
 		}
+		sink, err := m.archive.GetSink(sinkID)
+		if err != nil {
+			continue
+		}
+		targets = append(targets, sink.RepoID)
 	}
 
 	return targets, nil
-}
-
-// extractRepoID extracts and parses the repo_id field from a connector config map.
-func extractRepoID(config map[string]any) uuid.UUID {
-	repoIDStr, ok := config["repo_id"].(string)
-	if !ok {
-		return uuid.Nil
-	}
-	rid, err := uuid.Parse(repoIDStr)
-	if err != nil {
-		return uuid.Nil
-	}
-	return rid
 }
