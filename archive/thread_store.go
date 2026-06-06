@@ -180,6 +180,27 @@ func (a *LocalArchive) getThread(threadID uuid.UUID) (*core.Thread, error) {
 	return &thread, nil
 }
 
+// getThreadBySourceExternalID finds a thread by its ingestion provenance, used for
+// idempotent re-collection. Returns ErrorNotFound when no matching thread exists.
+// Fully hydrates the thread (root node + edges) by reusing getThread.
+func (a *LocalArchive) getThreadBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Thread, error) {
+	var idStr string
+	err := a.db.QueryRow(`
+		SELECT id FROM threads WHERE source_id = ? AND external_id = ?
+	`, sourceID.String(), externalID).Scan(&idStr)
+	if err == sql.ErrNoRows {
+		return nil, core.NewErrorNotFound("thread", "")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up thread by provenance: %w", err)
+	}
+	threadID, err := uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse thread ID: %w", err)
+	}
+	return a.getThread(threadID)
+}
+
 // deleteThread deletes a thread and its thread_edge links, plus the root node.
 // Does NOT delete contained nodes (except the root node).
 func (a *LocalArchive) deleteThread(threadID uuid.UUID) error {

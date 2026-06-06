@@ -40,6 +40,9 @@ type EdgeStore interface {
 	GetEdge(edgeID uuid.UUID) (*Edge, error)
 	DeleteEdge(edgeID uuid.UUID) error
 	ListEdges(repoID uuid.UUID, opts EdgeListOptions) ([]Edge, int, error)
+	// GetEdgeBySourceExternalID finds an edge by ingestion provenance for
+	// idempotent re-collection. Returns ErrorNotFound when absent.
+	GetEdgeBySourceExternalID(sourceID uuid.UUID, externalID string) (*Edge, error)
 }
 
 // ThreadStore handles thread persistence.
@@ -50,6 +53,9 @@ type ThreadStore interface {
 	ListThreads(repoID uuid.UUID, opts ListOptions) ([]Thread, int, error)
 	AddNodeToThread(threadID, nodeID uuid.UUID, edgeType string) error
 	RemoveNodeFromThread(threadID, nodeID uuid.UUID) error
+	// GetThreadBySourceExternalID finds a thread by ingestion provenance for
+	// idempotent re-collection. Returns ErrorNotFound when absent.
+	GetThreadBySourceExternalID(sourceID uuid.UUID, externalID string) (*Thread, error)
 }
 
 // AnnotationStore handles annotation persistence.
@@ -58,6 +64,9 @@ type AnnotationStore interface {
 	GetAnnotation(annotationID uuid.UUID) (*Annotation, error)
 	DeleteAnnotation(annotationID uuid.UUID) error
 	ListAnnotations(repoID uuid.UUID, opts ListOptions) ([]Annotation, int, error)
+	// GetAnnotationBySourceExternalID finds an annotation by ingestion provenance
+	// for idempotent re-collection. Returns ErrorNotFound when absent.
+	GetAnnotationBySourceExternalID(sourceID uuid.UUID, externalID string) (*Annotation, error)
 }
 
 // FilterStore handles filter persistence.

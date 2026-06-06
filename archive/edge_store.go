@@ -127,6 +127,16 @@ func (a *LocalArchive) getEdge(edgeID uuid.UUID) (*core.Edge, error) {
 	return scanEdgeFromSingleRow(row)
 }
 
+// getEdgeBySourceExternalID finds an edge by its ingestion provenance, used for
+// idempotent re-collection. Returns ErrorNotFound when no matching edge exists.
+func (a *LocalArchive) getEdgeBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Edge, error) {
+	row := a.db.QueryRow(`
+		SELECT id, short_id, repo_id, type, source, target, label, weight, source_id, external_id, created_by, version, created_at, updated_at
+		FROM edges WHERE source_id = ? AND external_id = ?
+	`, sourceID.String(), externalID)
+	return scanEdgeFromSingleRow(row)
+}
+
 // deleteEdge deletes an edge by UUID.
 func (a *LocalArchive) deleteEdge(edgeID uuid.UUID) error {
 	result, err := a.db.Exec(`DELETE FROM edges WHERE id = ?`, edgeID.String())

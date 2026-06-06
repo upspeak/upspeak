@@ -170,6 +170,28 @@ func (a *LocalArchive) getAnnotation(annotationID uuid.UUID) (*core.Annotation, 
 	return &annotation, nil
 }
 
+// getAnnotationBySourceExternalID finds an annotation by its ingestion provenance,
+// used for idempotent re-collection. Returns ErrorNotFound when no matching
+// annotation exists. Fully hydrates the annotation (embedded node + edge) by
+// reusing getAnnotation.
+func (a *LocalArchive) getAnnotationBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Annotation, error) {
+	var idStr string
+	err := a.db.QueryRow(`
+		SELECT id FROM annotations WHERE source_id = ? AND external_id = ?
+	`, sourceID.String(), externalID).Scan(&idStr)
+	if err == sql.ErrNoRows {
+		return nil, core.NewErrorNotFound("annotation", "")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up annotation by provenance: %w", err)
+	}
+	annotationID, err := uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse annotation ID: %w", err)
+	}
+	return a.getAnnotation(annotationID)
+}
+
 // deleteAnnotation deletes an annotation, its embedded edge, and its embedded node.
 func (a *LocalArchive) deleteAnnotation(annotationID uuid.UUID) error {
 	// Get the annotation to find the embedded node and edge IDs.

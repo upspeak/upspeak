@@ -211,6 +211,10 @@ func (a *LocalArchive) ListEdges(repoID uuid.UUID, opts core.EdgeListOptions) ([
 	return a.listEdges(repoID, opts)
 }
 
+func (a *LocalArchive) GetEdgeBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Edge, error) {
+	return a.getEdgeBySourceExternalID(sourceID, externalID)
+}
+
 // --- core.ThreadStore implementation ---
 
 func (a *LocalArchive) SaveThread(thread *core.Thread) error {
@@ -237,6 +241,10 @@ func (a *LocalArchive) RemoveNodeFromThread(threadID, nodeID uuid.UUID) error {
 	return a.removeNodeFromThread(threadID, nodeID)
 }
 
+func (a *LocalArchive) GetThreadBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Thread, error) {
+	return a.getThreadBySourceExternalID(sourceID, externalID)
+}
+
 // --- core.AnnotationStore implementation ---
 
 func (a *LocalArchive) SaveAnnotation(annotation *core.Annotation) error {
@@ -253,6 +261,10 @@ func (a *LocalArchive) DeleteAnnotation(annotationID uuid.UUID) error {
 
 func (a *LocalArchive) ListAnnotations(repoID uuid.UUID, opts core.ListOptions) ([]core.Annotation, int, error) {
 	return a.listAnnotations(repoID, opts)
+}
+
+func (a *LocalArchive) GetAnnotationBySourceExternalID(sourceID uuid.UUID, externalID string) (*core.Annotation, error) {
+	return a.getAnnotationBySourceExternalID(sourceID, externalID)
 }
 
 // --- core.FilterStore implementation ---

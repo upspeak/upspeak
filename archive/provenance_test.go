@@ -4,6 +4,7 @@ package archive
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -218,6 +219,128 @@ func TestAnnotationProvenanceNilForLocal(t *testing.T) {
 	}
 	if got.ExternalID != nil {
 		t.Fatalf("annotation ExternalID: want nil, got %v", got.ExternalID)
+	}
+}
+
+// TestGetEdgeBySourceExternalID saves an edge with provenance, then looks it up by
+// (sourceID, externalID) and asserts the correct edge is returned. It also asserts
+// that a lookup for a missing external ID returns ErrorNotFound.
+func TestGetEdgeBySourceExternalID(t *testing.T) {
+	a := setupTestArchive(t)
+	repo := createTestRepo(t, a)
+	src, tgt := saveBareNode(t, a, repo.ID), saveBareNode(t, a, repo.ID)
+	sid := uuid.New()
+	ext := "edge-ext-9"
+	if err := a.SaveEdge(&core.Edge{ID: core.NewID(), RepoID: repo.ID, Type: "rel", Source: src, Target: tgt, Weight: 1, CreatedBy: repo.OwnerID, SourceID: &sid, ExternalID: &ext}); err != nil {
+		t.Fatalf("save edge: %v", err)
+	}
+
+	got, err := a.GetEdgeBySourceExternalID(sid, ext)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.ExternalID == nil || *got.ExternalID != ext {
+		t.Fatalf("wrong edge: %+v", got)
+	}
+	if _, err := a.GetEdgeBySourceExternalID(sid, "missing"); !errors.As(err, new(*core.ErrorNotFound)) {
+		t.Fatalf("expected ErrorNotFound, got %v", err)
+	}
+}
+
+// TestGetThreadBySourceExternalID saves a thread with provenance, then looks it up
+// by (sourceID, externalID) and asserts the correct thread is returned. It also
+// asserts that a lookup for a missing external ID returns ErrorNotFound.
+func TestGetThreadBySourceExternalID(t *testing.T) {
+	a := setupTestArchive(t)
+	repo := createTestRepo(t, a)
+
+	sid := uuid.New()
+	ext := "thread-ext-9"
+	th := &core.Thread{
+		ID:     core.NewID(),
+		RepoID: repo.ID,
+		Node: core.Node{
+			ID:          core.NewID(),
+			RepoID:      repo.ID,
+			Type:        "thread-root",
+			Subject:     "lookup thread",
+			ContentType: "text/plain",
+			Body:        json.RawMessage(`"root body"`),
+			CreatedBy:   testOwnerID,
+		},
+		CreatedBy:  testOwnerID,
+		SourceID:   &sid,
+		ExternalID: &ext,
+	}
+	if err := a.SaveThread(th); err != nil {
+		t.Fatalf("save thread: %v", err)
+	}
+
+	got, err := a.GetThreadBySourceExternalID(sid, ext)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.ExternalID == nil || *got.ExternalID != ext {
+		t.Fatalf("wrong thread: %+v", got)
+	}
+	if _, err := a.GetThreadBySourceExternalID(sid, "missing"); !errors.As(err, new(*core.ErrorNotFound)) {
+		t.Fatalf("expected ErrorNotFound, got %v", err)
+	}
+}
+
+// TestGetAnnotationBySourceExternalID saves an annotation with provenance, then
+// looks it up by (sourceID, externalID) and asserts the correct annotation is
+// returned. It also asserts that a lookup for a missing external ID returns
+// ErrorNotFound.
+func TestGetAnnotationBySourceExternalID(t *testing.T) {
+	a := setupTestArchive(t)
+	repo := createTestRepo(t, a)
+
+	targetID := saveBareNode(t, a, repo.ID)
+
+	sid := uuid.New()
+	ext := "anno-ext-9"
+	annotationNodeID := core.NewID()
+	ann := &core.Annotation{
+		ID:         core.NewID(),
+		RepoID:     repo.ID,
+		Motivation: "commenting",
+		CreatedBy:  testOwnerID,
+		SourceID:   &sid,
+		ExternalID: &ext,
+		Node: core.Node{
+			ID:          annotationNodeID,
+			RepoID:      repo.ID,
+			Type:        "annotation",
+			Subject:     "lookup annotation",
+			ContentType: "text/plain",
+			Body:        json.RawMessage(`"annotation body"`),
+			CreatedBy:   testOwnerID,
+		},
+		Edge: core.Edge{
+			ID:        core.NewID(),
+			RepoID:    repo.ID,
+			Type:      "annotation",
+			Source:    annotationNodeID,
+			Target:    targetID,
+			Label:     "annotates",
+			Weight:    1.0,
+			CreatedBy: testOwnerID,
+		},
+	}
+	if err := a.SaveAnnotation(ann); err != nil {
+		t.Fatalf("save annotation: %v", err)
+	}
+
+	got, err := a.GetAnnotationBySourceExternalID(sid, ext)
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.ExternalID == nil || *got.ExternalID != ext {
+		t.Fatalf("wrong annotation: %+v", got)
+	}
+	if _, err := a.GetAnnotationBySourceExternalID(sid, "missing"); !errors.As(err, new(*core.ErrorNotFound)) {
+		t.Fatalf("expected ErrorNotFound, got %v", err)
 	}
 }
 
