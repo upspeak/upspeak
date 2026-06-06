@@ -119,6 +119,19 @@ func (s *Supervisor) handleSinkEvent(sinkID uuid.UUID, data []byte) ackDecision 
 		return ackOK
 	}
 
+	// Decode the event into an ingestible batch once, before any archive read or
+	// side effect. A decode failure is poison (redelivery cannot help) → Term,
+	// mirroring rules.Engine. The decoded batch is reused across all subscribers.
+	batch, mem, err := batchFromEvent(&evt)
+	if err != nil {
+		slog.Error("Ingest supervisor: malformed event payload",
+			"event", evt.Type, "error", err)
+		return ackTerm
+	}
+	if batch == nil && mem == nil {
+		return ackOK // event type not handled; intentional no-op
+	}
+
 	sources, err := s.archive.ListRepoSourcesForSink(sinkID)
 	if err != nil {
 		slog.Error("Ingest supervisor: list subscribers failed",
@@ -142,7 +155,7 @@ func (s *Supervisor) handleSinkEvent(sinkID uuid.UUID, data []byte) ackDecision 
 			ownerID = resolved
 			ownerCache[sources[i].RepoID] = ownerID
 		}
-		d, err := s.ingestForSource(&sources[i], &evt, ownerID)
+		d, err := s.ingestForSource(&sources[i], &evt, ownerID, batch, mem)
 		if err != nil {
 			slog.Error("Ingest supervisor: ingest failed",
 				"source", sources[i].ID, "error", err)
@@ -159,24 +172,18 @@ func (s *Supervisor) handleSinkEvent(sinkID uuid.UUID, data []byte) ackDecision 
 	return ackOK
 }
 
-// ingestForSource maps one Sink event into the ingest pipeline for a single
-// subscribing repo-Source, attributing created entities to ownerID. It returns
-// (true, nil) when the batch should be retried (unresolved relational
+// ingestForSource applies one decoded Sink event to a single subscribing
+// repo-Source, attributing created entities to ownerID. Exactly one of batch/mem
+// is non-nil (a membership change is handled separately from batch ingestion). It
+// returns (true, nil) when the work should be retried (unresolved relational
 // references), (false, nil) on success (including filter rejection), and
 // (false, err) on a hard error.
-func (s *Supervisor) ingestForSource(src *core.Source, evt *core.Event, ownerID uuid.UUID) (deferred bool, err error) {
+func (s *Supervisor) ingestForSource(src *core.Source, evt *core.Event, ownerID uuid.UUID, batch *core.IngestBatch, mem *membership) (deferred bool, err error) {
 	ctx := IngestContext{
 		RepoID:      src.RepoID,
 		Source:      src,
 		CreatedBy:   ownerID,
 		InboundHops: evt.Hops, // propagate so emitted events carry Hops+1
-	}
-
-	// Membership changes arrive as EventThreadNodeAdded/Removed and are
-	// handled separately from batch ingestion.
-	batch, mem, err := batchFromEvent(evt)
-	if err != nil {
-		return false, err
 	}
 
 	if mem != nil {
@@ -188,10 +195,6 @@ func (s *Supervisor) ingestForSource(src *core.Source, evt *core.Event, ownerID 
 			return true, nil // unresolved thread or node: defer
 		}
 		return false, nil
-	}
-
-	if batch == nil {
-		return false, nil // event type not handled; intentional no-op
 	}
 
 	res, err := s.pipeline.Ingest(ctx, batch)

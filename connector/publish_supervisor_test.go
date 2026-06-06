@@ -351,6 +351,29 @@ func TestPublishSupervisorPropagatesHops(t *testing.T) {
 	}
 }
 
+// TestPublishSupervisorMalformedPayloadTerminates verifies that a well-formed
+// envelope carrying a payload that cannot decode into its event shape is
+// terminated (poison), not retried, and nothing is republished.
+func TestPublishSupervisorMalformedPayloadTerminates(t *testing.T) {
+	m := setupTestModule(t)
+	pub := &mockPublisher{}
+	sup := NewPublishSupervisor(m.archive, pub, nil)
+
+	// Valid envelope, but the payload is a JSON array where a NodeCreated payload
+	// object is expected.
+	evt := core.Event{Type: core.EventNodeCreated, RepoID: uuid.New(), Payload: json.RawMessage(`[1,2,3]`)}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if d := sup.dispatch(data); d != ackTerm {
+		t.Fatalf("malformed payload should ackTerm, got %v", d)
+	}
+	if len(pub.published) != 0 {
+		t.Fatalf("nothing should be republished for a poison payload, got %+v", pub.published)
+	}
+}
+
 // TestPublishSupervisorNormalisesNodePatched verifies that a NodePatched event is
 // resolved against the stored node and republished as a NodeUpdated event (the
 // patch payload alone does not carry the full node a subscriber needs).

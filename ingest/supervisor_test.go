@@ -276,3 +276,23 @@ func TestSupervisorMalformedMessageTerminates(t *testing.T) {
 		t.Fatalf("malformed message should ackTerm, got %v", d)
 	}
 }
+
+// TestSupervisorMalformedPayloadTerminates verifies that a well-formed envelope
+// carrying a payload that cannot decode into its event shape is terminated
+// (poison), not retried — redelivery cannot fix a malformed payload.
+func TestSupervisorMalformedPayloadTerminates(t *testing.T) {
+	a := newTestArchive(t)
+	sup := NewSupervisor(a, nil, nil)
+	sinkID := uuid.New()
+
+	// Valid envelope, but the payload is a JSON array where a NodeCreated payload
+	// object is expected.
+	evt := core.Event{Type: core.EventNodeCreated, RepoID: uuid.New(), Payload: json.RawMessage(`[1,2,3]`)}
+	data, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if d := sup.handleSinkEvent(sinkID, data); d != ackTerm {
+		t.Fatalf("malformed payload should ackTerm, got %v", d)
+	}
+}

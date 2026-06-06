@@ -124,6 +124,11 @@ func (s *PublishSupervisor) dispatch(data []byte) ackDecision {
 
 	nodes, normType, payload, ok, err := s.resolvePublish(&evt)
 	if err != nil {
+		if errors.Is(err, errBadPayload) {
+			slog.Error("Publish supervisor: malformed event payload",
+				"event", evt.Type, "error", err)
+			return ackTerm // Poison payload; redelivery cannot help.
+		}
 		slog.Error("Publish supervisor: failed to resolve event entity",
 			"event", evt.Type, "repo", evt.RepoID, "error", err)
 		return ackRetry // Archive read failed before any publish.
@@ -168,6 +173,20 @@ func (s *PublishSupervisor) dispatch(data []byte) ackDecision {
 	return ackOK
 }
 
+// errBadPayload marks an event whose payload cannot be decoded into the expected
+// shape. Such an event is poison — redelivery cannot help — so dispatch
+// terminates it rather than retrying, mirroring rules.Engine.
+var errBadPayload = errors.New("malformed event payload")
+
+// decodePayload unmarshals an event payload, tagging a decode failure as poison
+// (errBadPayload) so the caller can distinguish it from a transient archive error.
+func decodePayload(raw json.RawMessage, dst any, t core.EventType) error {
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return fmt.Errorf("resolvePublish %s: %w: %v", t, errBadPayload, err)
+	}
+	return nil
+}
+
 // resolvePublish resolves the node(s) to evaluate the Sink filter chain against,
 // the normalised event type to republish, and the payload to republish. It
 // returns ok=false when the entity is absent (e.g. deleted) and there is nothing
@@ -189,8 +208,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 	switch evt.Type {
 	case core.EventNodeCreated:
 		var p core.EventNodeCreatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.Node == nil {
 			return nil, "", nil, false, nil
@@ -199,8 +218,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventNodeUpdated:
 		var p core.EventNodeUpdatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.UpdatedNode == nil {
 			return nil, "", nil, false, nil
@@ -212,8 +231,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 		// and normalise to an EventNodeUpdated shape so Sink filters can evaluate
 		// the current node state.
 		var p core.EventNodePatchPayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		n, err := s.archive.GetNode(p.NodeID)
 		if err != nil {
@@ -227,8 +246,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventEdgeCreated:
 		var p core.EventEdgeCreatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.Edge == nil {
 			return nil, "", nil, false, nil
@@ -244,8 +263,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventEdgeUpdated:
 		var p core.EventEdgeUpdatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.UpdatedEdge == nil {
 			return nil, "", nil, false, nil
@@ -261,8 +280,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventAnnotationCreated:
 		var p core.EventAnnotationCreatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.Annotation == nil {
 			return nil, "", nil, false, nil
@@ -281,8 +300,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventAnnotationUpdated:
 		var p core.EventAnnotationUpdatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.UpdatedAnnotation == nil {
 			return nil, "", nil, false, nil
@@ -298,8 +317,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventThreadCreated:
 		var p core.EventThreadCreatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.Thread == nil {
 			return nil, "", nil, false, nil
@@ -309,8 +328,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventThreadUpdated:
 		var p core.EventThreadUpdatePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.UpdatedThread == nil {
 			return nil, "", nil, false, nil
@@ -320,8 +339,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventThreadNodeAdded:
 		var p core.EventThreadNodePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.NodeID == uuid.Nil {
 			return nil, "", nil, false, nil
@@ -337,8 +356,8 @@ func (s *PublishSupervisor) resolvePublish(evt *core.Event) (nodes []*core.Node,
 
 	case core.EventThreadNodeRemoved:
 		var p core.EventThreadNodePayload
-		if err := json.Unmarshal(evt.Payload, &p); err != nil {
-			return nil, "", nil, false, fmt.Errorf("resolvePublish %s: %w", evt.Type, err)
+		if err := decodePayload(evt.Payload, &p, evt.Type); err != nil {
+			return nil, "", nil, false, err
 		}
 		if p.NodeID == uuid.Nil {
 			return nil, "", nil, false, nil
